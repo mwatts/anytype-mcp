@@ -30,33 +30,44 @@ impl AnytypeMcpServer {
     pub async fn new(spec_path: Option<String>, config: Config) -> McpResult<Self> {
         info!("Initializing Anytype MCP Server");
 
-        // Determine spec path
-        let spec_path = spec_path
-            .or_else(|| config.spec_path.clone())
-            .unwrap_or_else(|| {
-                // Default to bundled spec or common paths
-                if std::path::Path::new("scripts/openapi.json").exists() {
-                    "scripts/openapi.json".to_string()
-                } else if std::path::Path::new("openapi.json").exists() {
-                    "openapi.json".to_string()
-                } else {
-                    "https://api.anytype.io/openapi.json".to_string()
-                }
-            });
+        // Embedded OpenAPI spec as fallback
+        const EMBEDDED_OPENAPI_SPEC: &str = include_str!("../../../scripts/openapi.json");
 
-        info!("Loading OpenAPI specification from: {}", spec_path);
-
-        // Load OpenAPI spec
-        let spec = if spec_path.starts_with("http") {
-            // Download from URL
-            let response = reqwest::get(&spec_path).await
-                .map_err(AnytypeMcpError::HttpClient)?;
-            let content = response.text().await
-                .map_err(AnytypeMcpError::HttpClient)?;
-            serde_json::from_str(&content)
-                .map_err(AnytypeMcpError::Json)?
+        // Load OpenAPI spec with priority order
+        let spec = if let Some(path) = spec_path.or_else(|| config.spec_path.clone()) {
+            info!("Loading OpenAPI specification from: {}", path);
+            if path.starts_with("http") {
+                // Download from URL
+                let response = reqwest::get(&path).await
+                    .map_err(AnytypeMcpError::HttpClient)?;
+                let content = response.text().await
+                    .map_err(AnytypeMcpError::HttpClient)?;
+                serde_json::from_str(&content)
+                    .map_err(AnytypeMcpError::Json)?
+            } else {
+                load_openapi_spec(&path).await?
+            }
+        } else if std::path::Path::new("scripts/openapi.json").exists() {
+            info!("Loading OpenAPI specification from: scripts/openapi.json");
+            load_openapi_spec("scripts/openapi.json").await?
+        } else if std::path::Path::new("openapi.json").exists() {
+            info!("Loading OpenAPI specification from: openapi.json");
+            load_openapi_spec("openapi.json").await?
         } else {
-            load_openapi_spec(&spec_path).await?
+            // Try embedded spec before falling back to remote URL
+            info!("Using embedded OpenAPI specification");
+            match serde_json::from_str(EMBEDDED_OPENAPI_SPEC) {
+                Ok(spec) => spec,
+                Err(_) => {
+                    info!("Failed to parse embedded spec, falling back to remote URL");
+                    let response = reqwest::get("https://api.anytype.io/openapi.json").await
+                        .map_err(AnytypeMcpError::HttpClient)?;
+                    let content = response.text().await
+                        .map_err(AnytypeMcpError::HttpClient)?;
+                    serde_json::from_str(&content)
+                        .map_err(AnytypeMcpError::Json)?
+                }
+            }
         };
 
         // Get base URL
