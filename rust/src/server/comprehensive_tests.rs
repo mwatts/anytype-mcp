@@ -125,24 +125,24 @@ mod integration_tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let server = create_comprehensive_test_server().await;
-            
+
             // Verify all tools were created
             assert_eq!(server.get_tools().len(), 3);
-            
+
             let tool_names: Vec<&str> = server.get_tools().iter().map(|t| t.name.as_str()).collect();
             assert!(tool_names.contains(&"getUsers"));
             assert!(tool_names.contains(&"createUser"));
             assert!(tool_names.contains(&"getUserById"));
-            
+
             // Verify tool details
             let get_users_tool = server.get_tool("getUsers").unwrap();
             assert_eq!(get_users_tool.method, "GET");
             assert_eq!(get_users_tool.path, "/users");
-            
+
             let create_user_tool = server.get_tool("createUser").unwrap();
             assert_eq!(create_user_tool.method, "POST");
             assert_eq!(create_user_tool.path, "/users");
-            
+
             let get_user_tool = server.get_tool("getUserById").unwrap();
             assert_eq!(get_user_tool.method, "GET");
             assert_eq!(get_user_tool.path, "/users/{id}");
@@ -195,7 +195,7 @@ mod integration_tests {
         });
 
         let converted = AnytypeMcpServer::convert_schema_to_tool_input(&complex_schema);
-        
+
         // Should handle complex nested schemas
         assert_eq!(converted.r#type, "object");
         assert!(converted.properties.is_some());
@@ -206,18 +206,18 @@ mod integration_tests {
     fn test_shared_runtime_performance() {
         // Test that creating new runtimes doesn't create performance bottlenecks
         let start = std::time::Instant::now();
-        
+
         for _i in 0..100 {
             let runtime = Runtime::new().expect("Failed to create runtime");
-            
+
             let _result = runtime.block_on(async {
                 tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
                 "test"
             });
         }
-        
+
         let duration = start.elapsed();
-        
+
         // Should complete in reasonable time (less than 5 seconds for 100 iterations)
         assert!(duration < std::time::Duration::from_secs(5));
     }
@@ -226,12 +226,12 @@ mod integration_tests {
     fn test_error_propagation() {
         // Test that errors are properly converted and propagated
         let invalid_config = Config::default();
-        
+
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(async {
             AnytypeMcpServer::new(Some("nonexistent.json".to_string()), invalid_config).await
         });
-        
+
         assert!(result.is_err());
         // Should be an IO error for missing file
         if let Err(error) = result {

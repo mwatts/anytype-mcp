@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test with a simple API spec
     let spec_path = "test-api.json";
-    
+
     if !std::path::Path::new(spec_path).exists() {
         println!("❌ Test spec file not found: {}", spec_path);
         println!("This test requires the eBay API specification file");
@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(mut server) => {
             println!("✅ Server created successfully!");
             println!("🔧 Available tools: {}", server.get_tools().len());
-            
+
             // Print some tool information
             for (i, tool) in server.get_tools().iter().take(3).enumerate() {
                 println!("  Tool {}: {} ({})", i + 1, tool.name, tool.method);
@@ -35,13 +35,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("    Description: {}", desc);
                 }
             }
-            
+
             if server.get_tools().len() > 3 {
                 println!("  ... and {} more tools", server.get_tools().len() - 3);
             }
 
             println!("🧪 Testing server startup (will timeout after 5 seconds)...");
-            
+
             // Test starting the server with a timeout since stdio transport will block
             match timeout(Duration::from_secs(5), server.start()).await {
                 Ok(result) => {

@@ -66,12 +66,12 @@ mod tests {
 
         let converted = AnytypeMcpServer::convert_schema_to_tool_input(&complex_schema);
         assert_eq!(converted.r#type, "object");
-        
+
         let properties = converted.properties.unwrap();
         assert!(properties.contains_key("name"));
         assert!(properties.contains_key("age"));
         assert!(properties.contains_key("email"));
-        
+
         let required = converted.required.unwrap();
         assert_eq!(required.len(), 2);
         assert!(required.contains(&"name".to_string()));

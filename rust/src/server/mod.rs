@@ -33,15 +33,15 @@ mod tests {
         });
 
         let converted = AnytypeMcpServer::convert_schema_to_tool_input(&simple_schema);
-        
+
         assert_eq!(converted.r#type, "object");
         assert!(converted.properties.is_some());
         assert!(converted.required.is_some());
-        
+
         let properties = converted.properties.unwrap();
         assert!(properties.contains_key("query"));
         assert!(properties.contains_key("limit"));
-        
+
         let required = converted.required.unwrap();
         assert_eq!(required, vec!["query"]);
     }
@@ -73,14 +73,14 @@ mod tests {
         });
 
         let converted = AnytypeMcpServer::convert_schema_to_tool_input(&nested_schema);
-        
+
         assert_eq!(converted.r#type, "object");
         assert!(converted.properties.is_some());
-        
+
         let properties = converted.properties.unwrap();
         assert!(properties.contains_key("user"));
         assert!(properties.contains_key("metadata"));
-        
+
         let required = converted.required.unwrap();
         assert_eq!(required, vec!["user"]);
     }
@@ -89,7 +89,7 @@ mod tests {
     async fn test_empty_schema_conversion() {
         let empty_schema = json!({});
         let converted = AnytypeMcpServer::convert_schema_to_tool_input(&empty_schema);
-        
+
         // Should default to object type with no properties or required fields
         assert_eq!(converted.r#type, "object");
         assert!(converted.properties.is_none());
@@ -109,10 +109,10 @@ mod tests {
         assert_eq!(converted.r#type, "array");
     }
 
-    #[tokio::test] 
+    #[tokio::test]
     async fn test_server_creation_with_minimal_config() {
         let config = Config::default();
-        
+
         // Create a simple test OpenAPI spec file
         let test_spec = json!({
             "openapi": "3.0.0",
@@ -188,7 +188,7 @@ mod tests {
         async fn test_tool_execution_with_mock_server() {
             // Start mock server
             let mut mock_server = MockServer::new_async().await;
-            
+
             // Create mock endpoint - NOTE: Mock server matches exact paths, not including base URL
             let mock = mock_server
                 .mock("GET", "/api/test?query=test_value")

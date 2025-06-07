@@ -104,7 +104,7 @@ impl AnytypeMcpServer {
                 description: tool.description.clone(),
                 input_schema: Self::convert_schema_to_tool_input(&tool.input_schema),
             };
-            
+
             debug!("Registering tool: {} with schema: {:?}", tool.name, mcpr_tool.input_schema);
             server_config = server_config.with_tool(mcpr_tool);
         }
@@ -121,20 +121,20 @@ impl AnytypeMcpServer {
             let tool_name = tool.name.clone();
             let tool_clone = tool.clone();
             let client_clone = self.http_client.clone();
-            
+
             server.register_tool_handler(&tool_name, move |params: Value| {
                 debug!("Executing tool: {} with params: {:?}", tool_clone.name, params);
-                
+
                 // Get or create the shared runtime
                 let runtime = SHARED_RUNTIME.get_or_init(|| {
                     Runtime::new().expect("Failed to create shared runtime")
                 });
-                
+
                 // Use the shared runtime for async execution within the sync handler
                 let result = runtime.block_on(async {
                     client_clone.execute_tool(&tool_clone, params).await
                 });
-                
+
                 match result {
                     Ok(response) => {
                         debug!("Tool {} executed successfully", tool_clone.name);
@@ -266,12 +266,12 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let server = create_test_server().await;
-            
+
             // Verify server has tools
             assert!(!server.tools.is_empty());
             assert_eq!(server.tools.len(), 1);
             assert_eq!(server.tools[0].name, "getTest");
-            
+
             // Verify the shared runtime system can be accessed
             // (it might already be initialized by other tests)
             let _runtime = SHARED_RUNTIME.get_or_init(|| {
@@ -293,7 +293,7 @@ mod tests {
         });
 
         let converted = AnytypeMcpServer::convert_schema_to_tool_input(&schema);
-        
+
         // Should convert to a valid ToolInputSchema
         assert_eq!(converted.r#type, "object");
     }
@@ -304,13 +304,13 @@ mod tests {
         let runtime = SHARED_RUNTIME.get_or_init(|| {
             Runtime::new().expect("Failed to create runtime")
         });
-        
+
         let result1 = runtime.block_on(async { "test1" });
         let result2 = runtime.block_on(async { "test2" });
-        
+
         assert_eq!(result1, "test1");
         assert_eq!(result2, "test2");
-        
+
         // Verify the same runtime is reused
         let runtime2 = SHARED_RUNTIME.get().unwrap();
         assert!(std::ptr::eq(runtime, runtime2));
@@ -329,12 +329,12 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let server = create_test_server().await;
-            
+
             // Test tool lookup functionality
             let tool = server.get_tool("getTest");
             assert!(tool.is_some());
             assert_eq!(tool.unwrap().name, "getTest");
-            
+
             let missing_tool = server.get_tool("nonexistent");
             assert!(missing_tool.is_none());
         });
