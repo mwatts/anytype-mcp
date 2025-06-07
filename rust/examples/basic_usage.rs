@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::default();
 
     // Create server
-    let mut server = AnytypeMcpServer::new(
+    let server = AnytypeMcpServer::new(
         Some("../scripts/openapi.json".to_string()),
         config
     ).await?;
@@ -18,7 +18,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // List available tools
     for tool in server.get_tools() {
-        println!("Tool: {} - {}", tool.name, tool.description);
+        println!("Tool: {} - {}", tool.name, tool.description.as_deref().unwrap_or("No description"));
     }
 
     Ok(())

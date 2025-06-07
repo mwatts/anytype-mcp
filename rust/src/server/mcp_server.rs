@@ -1,21 +1,27 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use mcpr::{
     transport::stdio::StdioTransport,
     server::{Server, ServerConfig},
+    Tool, schema::ToolInputSchema,
 };
-use tracing::info;
+use serde_json::Value;
+use tokio::runtime::Runtime;
+use tracing::{info, debug, error};
 
 use crate::config::Config;
 use crate::client::HttpClient;
 use crate::openapi::{load_openapi_spec, get_base_url, OpenApiParser, McpTool};
 use crate::utils::{AnytypeMcpError, Result as McpResult};
 
+// Global shared runtime for MCPR tool handlers
+static SHARED_RUNTIME: OnceLock<Runtime> = OnceLock::new();
+
 pub struct AnytypeMcpServer {
     #[allow(dead_code)]
     config: Config,
-    #[allow(dead_code)]
-    http_client: HttpClient,
+    pub(crate) http_client: HttpClient,
     tools: Vec<McpTool>,
     tool_map: HashMap<String, McpTool>,
 }
@@ -84,77 +90,65 @@ impl AnytypeMcpServer {
     }
 
     pub async fn start(&mut self) -> McpResult<()> {
-        info!("Starting MCP server");
+        info!("Starting MCP server with {} tools", self.tools.len());
 
         // Create server configuration
-        let server_config = ServerConfig::new()
+        let mut server_config = ServerConfig::new()
             .with_name("Anytype MCP Server")
             .with_version("1.0.0");
-         // For now, skip tool registration and just create a basic server
-        // TODO: Fix ToolInputSchema conversion and re-enable tool registration
-        info!("Creating MCPR server (tools will be added in next iteration)");
+
+        // Convert tools to MCPR format and add them to the server config
+        for tool in &self.tools {
+            let mcpr_tool = Tool {
+                name: tool.name.clone(),
+                description: tool.description.clone(),
+                input_schema: Self::convert_schema_to_tool_input(&tool.input_schema),
+            };
+            
+            debug!("Registering tool: {} with schema: {:?}", tool.name, mcpr_tool.input_schema);
+            server_config = server_config.with_tool(mcpr_tool);
+        }
+
+        info!("Creating MCPR server with {} tools registered", self.tools.len());
 
         // Create server
         let mut server = Server::new(server_config);
 
-        info!("MCPR server created, skipping tool registration for now");
+        info!("MCPR server created successfully");
 
-        /*
-        // TODO: Fix this section once ToolInputSchema conversion is resolved
-        // Convert tools to MCPR format with simplified schema
-        let mcpr_tools: Vec<Tool> = self.tools.iter().map(|tool| {
-            Tool {
-                name: tool.name.clone(),
-                description: tool.description.clone(),
-                input_schema: tool.input_schema.clone(), // Fix: proper conversion needed
-            }
-        }).collect();
-
-        // Add tools to config
-        let server_config = mcpr_tools.into_iter()
-            .fold(server_config, |config, tool| config.with_tool(tool));
-
-        // Create shared state for the server
-        let http_client = Arc::new(self.http_client.clone());
-        let tool_map = Arc::new(self.tool_map.clone());
-
-        // Register tool handlers
+        // Register tool handlers with actual HTTP client execution
         for tool in &self.tools {
             let tool_name = tool.name.clone();
-            let client = Arc::clone(&http_client);
-            let tools = Arc::clone(&tool_map);
-
+            let tool_clone = tool.clone();
+            let client_clone = self.http_client.clone();
+            
             server.register_tool_handler(&tool_name, move |params: Value| {
-                let client = Arc::clone(&client);
-                let tools = Arc::clone(&tools);
-                let tool_name = tool_name.clone();
-
-                debug!("Executing tool: {}", tool_name);
-
-                if let Some(tool) = tools.get(&tool_name) {
-                    // Use tokio to block on the async operation
-                    match tokio::runtime::Handle::current().block_on(
-                        client.execute_tool(tool, params)
-                    ) {
-                        Ok(result) => Ok(result),
-                        Err(e) => {
-                            error!("Tool execution failed: {}", e);
-                            Ok(serde_json::json!({
-                                "error": e.to_string()
-                            }))
-                        }
+                debug!("Executing tool: {} with params: {:?}", tool_clone.name, params);
+                
+                // Get or create the shared runtime
+                let runtime = SHARED_RUNTIME.get_or_init(|| {
+                    Runtime::new().expect("Failed to create shared runtime")
+                });
+                
+                // Use the shared runtime for async execution within the sync handler
+                let result = runtime.block_on(async {
+                    client_clone.execute_tool(&tool_clone, params).await
+                });
+                
+                match result {
+                    Ok(response) => {
+                        debug!("Tool {} executed successfully", tool_clone.name);
+                        Ok(response)
                     }
-                } else {
-                    error!("Tool not found: {}", tool_name);
-                    Ok(serde_json::json!({
-                        "error": format!("Tool not found: {}", tool_name)
-                    }))
+                    Err(e) => {
+                        error!("Tool {} execution failed: {}", tool_clone.name, e);
+                        Err(mcpr::error::MCPError::Protocol(format!("Tool execution failed: {}", e)))
+                    }
                 }
-            })?;
+            }).map_err(|e| AnytypeMcpError::McpProtocol(e.to_string()))?;
         }
 
-        info!("Registered {} tool handlers", self.tools.len());
-        */
+        info!("Registered {} tool handlers with actual HTTP execution", self.tools.len());
 
         // Start server with stdio transport
         let transport = StdioTransport::new();
@@ -170,5 +164,179 @@ impl AnytypeMcpServer {
 
     pub fn get_tool(&self, name: &str) -> Option<&McpTool> {
         self.tool_map.get(name)
+    }
+
+    /// Convert a serde_json::Value schema to MCPR ToolInputSchema
+    pub fn convert_schema_to_tool_input(schema: &Value) -> ToolInputSchema {
+        let mut tool_schema = ToolInputSchema {
+            r#type: "object".to_string(),
+            properties: None,
+            required: None,
+        };
+
+        if let Some(obj) = schema.as_object() {
+            // Extract type
+            if let Some(schema_type) = obj.get("type").and_then(|v| v.as_str()) {
+                tool_schema.r#type = schema_type.to_string();
+            }
+
+            // Extract properties
+            if let Some(properties) = obj.get("properties").and_then(|v| v.as_object()) {
+                let mut props_map = HashMap::new();
+                for (key, value) in properties {
+                    props_map.insert(key.clone(), value.clone());
+                }
+                tool_schema.properties = Some(props_map);
+            }
+
+            // Extract required fields
+            if let Some(required) = obj.get("required").and_then(|v| v.as_array()) {
+                let required_fields: Vec<String> = required
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+                if !required_fields.is_empty() {
+                    tool_schema.required = Some(required_fields);
+                }
+            }
+        }
+
+        tool_schema
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use serde_json::json;
+    use tempfile::NamedTempFile;
+    use std::io::Write;
+
+    fn create_test_openapi_spec() -> String {
+        json!({
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Test API",
+                "version": "1.0.0"
+            },
+            "servers": [
+                {
+                    "url": "https://api.test.com"
+                }
+            ],
+            "paths": {
+                "/test": {
+                    "get": {
+                        "operationId": "getTest",
+                        "summary": "Get test data",
+                        "parameters": [
+                            {
+                                "name": "query",
+                                "in": "query",
+                                "required": false,
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "Success"
+                            }
+                        }
+                    }
+                }
+            }
+        }).to_string()
+    }
+
+    async fn create_test_server() -> AnytypeMcpServer {
+        let spec_content = create_test_openapi_spec();
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(spec_content.as_bytes()).unwrap();
+        let spec_path = temp_file.path().to_string_lossy().to_string();
+
+        let config = Config::default();
+        AnytypeMcpServer::new(Some(spec_path), config).await.unwrap()
+    }
+
+    #[test]
+    fn test_server_creation_with_shared_runtime() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let server = create_test_server().await;
+            
+            // Verify server has tools
+            assert!(!server.tools.is_empty());
+            assert_eq!(server.tools.len(), 1);
+            assert_eq!(server.tools[0].name, "getTest");
+            
+            // Verify the shared runtime system can be accessed
+            // (it might already be initialized by other tests)
+            let _runtime = SHARED_RUNTIME.get_or_init(|| {
+                Runtime::new().expect("Failed to create runtime")
+            });
+        });
+    }
+
+    #[test]
+    fn test_schema_conversion() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query"
+                }
+            }
+        });
+
+        let converted = AnytypeMcpServer::convert_schema_to_tool_input(&schema);
+        
+        // Should convert to a valid ToolInputSchema
+        assert_eq!(converted.r#type, "object");
+    }
+
+    #[test]
+    fn test_shared_runtime_creation() {
+        // Test that the shared runtime system works
+        let runtime = SHARED_RUNTIME.get_or_init(|| {
+            Runtime::new().expect("Failed to create runtime")
+        });
+        
+        let result1 = runtime.block_on(async { "test1" });
+        let result2 = runtime.block_on(async { "test2" });
+        
+        assert_eq!(result1, "test1");
+        assert_eq!(result2, "test2");
+        
+        // Verify the same runtime is reused
+        let runtime2 = SHARED_RUNTIME.get().unwrap();
+        assert!(std::ptr::eq(runtime, runtime2));
+    }
+
+    #[test]
+    fn test_error_handling() {
+        // Test that error conversion works properly
+        let error = AnytypeMcpError::Config("test error".to_string());
+        let error_string = error.to_string();
+        assert!(error_string.contains("test error"));
+    }
+
+    #[test]
+    fn test_tool_lookup() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let server = create_test_server().await;
+            
+            // Test tool lookup functionality
+            let tool = server.get_tool("getTest");
+            assert!(tool.is_some());
+            assert_eq!(tool.unwrap().name, "getTest");
+            
+            let missing_tool = server.get_tool("nonexistent");
+            assert!(missing_tool.is_none());
+        });
     }
 }
