@@ -1,0 +1,61 @@
+[package]
+name = "anytype-mcp-rust"
+version = "1.0.0"
+edition = "2021"
+authors = ["Anytype MCP Contributors"]
+description = "Anytype MCP Server implementation in Rust"
+license = "MIT"
+repository = "https://github.com/anyproto/anytype-mcp"
+keywords = ["anytype", "mcp", "api", "server"]
+
+[[bin]]
+name = "anytype-mcp"
+path = "src/main.rs"
+
+[dependencies]
+# MCP Protocol
+mcpr = "0.2.3"
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP Client
+reqwest = { version = "0.12.19", features = ["json", "multipart", "stream"] }
+
+# OpenAPI
+openapiv3 = "2.0"
+serde_yaml = "0.9.33"
+
+# CLI
+clap = { version = "4.0", features = ["derive"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0.12"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+uuid = { version = "1.0", features = ["v4"] }
+url = "2.0"
+mime = "0.3"
+bytes = "1.0"
+base64 = "0.22.1"
+
+# Template engine (for auth templates)
+mustache = "0.9"
+handlebars = "6.3.2"
+
+# Configuration
+figment = { version = "0.10", features = ["toml", "json", "env"] }
+
+[dev-dependencies]
+tempfile = "3.0"
+mockito = "1.0"
+test-case = "3.0"
