@@ -48,10 +48,12 @@ impl Config {
         Ok(config)
     }
 
+    #[allow(dead_code)]
     pub fn get_header(&self, key: &str) -> Option<&String> {
         self.headers.get(key)
     }
 
+    #[allow(dead_code)]
     pub fn get_authorization_header(&self) -> Option<&String> {
         self.get_header("Authorization")
     }

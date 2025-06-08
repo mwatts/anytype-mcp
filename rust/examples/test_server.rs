@@ -1,6 +1,5 @@
-use anytype_mcp_rust::config::Config;
 use anytype_mcp_rust::openapi::McpTool;
-use anytype_mcp_rust::server::AnytypeMcpServer;
+use anytype_mcp_rust::server::AnytypeJsonRpcServer;
 use serde_json::json;
 
 #[tokio::main]
@@ -9,15 +8,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     println!("Testing MCP server with tool registration...");
-
-    // Create a minimal config
-    let config = Config {
-        spec_path: None,
-        base_url: Some("http://localhost:31009".to_string()),
-        headers: Default::default(),
-        timeout_seconds: Some(30),
-        max_retries: Some(3),
-    };
 
     // Create a test tool manually to verify our conversion logic
     let test_tool = McpTool {
@@ -45,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Created test tool: {:?}", test_tool);
 
     // Test the schema conversion function
-    let converted_schema = AnytypeMcpServer::convert_schema_to_tool_input(&test_tool.input_schema);
+    let converted_schema = AnytypeJsonRpcServer::convert_schema_to_tool_input(&test_tool.input_schema);
 
     println!("Converted schema: {:?}", converted_schema);
     println!("✅ Schema conversion test successful!");

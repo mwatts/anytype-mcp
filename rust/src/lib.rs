@@ -5,7 +5,7 @@ pub mod client;
 pub mod auth;
 pub mod utils;
 
-pub use server::AnytypeMcpServer;
+pub use server::{AnytypeJsonRpcServer, HybridMcpServer, ServerMode};
 pub use openapi::OpenApiParser;
 pub use client::HttpClient;
 pub use auth::KeyGenerator;

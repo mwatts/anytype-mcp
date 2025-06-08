@@ -1,4 +1,4 @@
-use anytype_mcp_rust::{Config, AnytypeMcpServer};
+use anytype_mcp_rust::{Config, server::AnytypeJsonRpcServer};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::default();
 
     // Create server
-    let server = AnytypeMcpServer::new(
+    let server = AnytypeJsonRpcServer::new(
         Some("../scripts/openapi.json".to_string()),
         config
     ).await?;

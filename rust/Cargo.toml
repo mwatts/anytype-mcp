@@ -13,11 +13,17 @@ name = "anytype-mcp"
 path = "src/main.rs"
 
 [dependencies]
-# MCP Protocol
-mcpr = "0.2.3"
+# Official Rust MCP SDK
+rmcp = { version = "0.1.5", features = ["transport-io", "transport-sse"] }
+
+# Schema generation
+schemars = { version = "0.8", features = ["derive"] }
 
 # Async runtime
 tokio = { version = "1.0", features = ["full"] }
+
+# Async traits
+async-trait = "0.1"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

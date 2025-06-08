@@ -38,19 +38,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_schema_conversion_edge_cases() {
-        use crate::server::AnytypeMcpServer;
+        use crate::server::AnytypeJsonRpcServer;
 
         // Test with missing properties
         let minimal_schema = json!({"type": "object"});
-        let converted = AnytypeMcpServer::convert_schema_to_tool_input(&minimal_schema);
-        assert_eq!(converted.r#type, "object");
-        assert!(converted.properties.is_none());
-        assert!(converted.required.is_none());
+        let converted = AnytypeJsonRpcServer::convert_schema_to_tool_input(&minimal_schema);
+        assert_eq!(converted["type"], "object");
+        assert!(converted.get("properties").is_none() || converted["properties"].is_null());
+        assert!(converted.get("required").is_none() || converted["required"].is_null());
 
         // Test with string type
         let string_schema = json!({"type": "string"});
-        let converted = AnytypeMcpServer::convert_schema_to_tool_input(&string_schema);
-        assert_eq!(converted.r#type, "string");
+        let converted = AnytypeJsonRpcServer::convert_schema_to_tool_input(&string_schema);
+        assert_eq!(converted["type"], "string");
 
         // Test with complex schema including additional properties
         let complex_schema = json!({
@@ -64,17 +64,17 @@ mod tests {
             "additionalProperties": false
         });
 
-        let converted = AnytypeMcpServer::convert_schema_to_tool_input(&complex_schema);
-        assert_eq!(converted.r#type, "object");
+        let converted = AnytypeJsonRpcServer::convert_schema_to_tool_input(&complex_schema);
+        assert_eq!(converted["type"], "object");
 
-        let properties = converted.properties.unwrap();
+        let properties = converted["properties"].as_object().unwrap();
         assert!(properties.contains_key("name"));
         assert!(properties.contains_key("age"));
         assert!(properties.contains_key("email"));
 
-        let required = converted.required.unwrap();
+        let required = converted["required"].as_array().unwrap();
         assert_eq!(required.len(), 2);
-        assert!(required.contains(&"name".to_string()));
-        assert!(required.contains(&"email".to_string()));
+        assert!(required.contains(&json!("name")));
+        assert!(required.contains(&json!("email")));
     }
 }
