@@ -6,7 +6,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().init();
 
     // Load configuration
-    let config = Config::default();
+    let config = Config::load(None)?;
 
     // Create server
     let server = AnytypeJsonRpcServer::new(

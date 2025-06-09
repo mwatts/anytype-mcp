@@ -106,23 +106,4 @@ mod tests {
         let converted = AnytypeJsonRpcServer::convert_schema_to_tool_input(&array_schema);
         assert_eq!(converted["type"], "array");
     }
-
-    // TODO: Adapt integration tests for the new AnytypeJsonRpcServer
-    // These tests were written for the legacy server and need to be updated
-    /*
-    #[tokio::test]
-    async fn test_server_creation_with_minimal_config() {
-        // Test implementation would go here
-    }
-
-    #[tokio::test]
-    async fn test_mcp_tool_clone() {
-        // Test implementation would go here
-    }
-
-    #[cfg(test)]
-    mod integration_tests {
-        // Integration tests would go here
-    }
-    */
 }

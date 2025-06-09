@@ -97,6 +97,8 @@ async fn main() -> Result<()> {
     // Initialize logging
     let log_level = if cli.debug { "debug" } else { "info" };
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr) // ✅ Write logs to stderr
+        .with_ansi(false)
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
                 .add_directive(log_level.parse().unwrap())

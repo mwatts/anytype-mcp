@@ -17,6 +17,14 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
+    /// Create a new HTTP client with the given configuration and base URL.
+    ///
+    /// This client automatically includes the following headers in all requests:
+    /// - `Anytype-Version: 2025-05-20` - Required Anytype API version header
+    /// - `Content-Type: application/json` - JSON content type for API requests
+    /// - `Authorization: Bearer <api_key>` - Only if api_key is set in config
+    ///
+    /// The API key can be provided either in the config struct or via the `ANYTYPE_API_KEY` environment variable.
     pub fn new(config: &Config, base_url: String) -> McpResult<Self> {
         let timeout = Duration::from_secs(config.timeout_seconds.unwrap_or(30));
 
@@ -25,10 +33,25 @@ impl HttpClient {
             .build()
             .map_err(AnytypeMcpError::HttpClient)?;
 
+        // Build default headers including required ones
+        let mut default_headers = config.headers.clone();
+
+        // Add required Anytype headers
+        default_headers.insert("Anytype-Version".to_string(), "2025-05-20".to_string());
+        default_headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+        // Add Authorization header if API key is provided
+        if let Some(api_key) = &config.api_key {
+            debug!("Adding Authorization header with Bearer token");
+            default_headers.insert("Authorization".to_string(), format!("Bearer {}", api_key));
+        } else {
+            debug!("No API key provided, skipping Authorization header");
+        }
+
         Ok(Self {
             client,
             base_url,
-            default_headers: config.headers.clone(),
+            default_headers,
         })
     }
 
@@ -231,5 +254,11 @@ impl HttpClient {
                 .map_err(AnytypeMcpError::HttpClient)?;
             Ok(Value::String(text))
         }
+    }
+
+    /// Get the default headers for testing purposes
+    #[cfg(test)]
+    pub fn get_default_headers(&self) -> &HashMap<String, String> {
+        &self.default_headers
     }
 }

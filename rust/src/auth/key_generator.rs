@@ -36,7 +36,7 @@ Add the following to your MCP client configuration:
     "anytype": {
       "command": "anytype-mcp",
       "env": {
-        "OPENAPI_MCP_HEADERS": "{\"Authorization\":\"Bearer YOUR_API_KEY_HERE\", \"Anytype-Version\":\"2025-05-20\"}"
+        "ANYTYPE_API_KEY": "YOUR_API_KEY_HERE"
       }
     }
   }
@@ -45,7 +45,7 @@ Add the following to your MCP client configuration:
 
 Or set environment variables:
 ```bash
-export ANYTYPE_MCP_HEADERS='{"Authorization":"Bearer YOUR_API_KEY_HERE", "Anytype-Version":"2025-05-20"}'
+export ANYTYPE_API_KEY='YOUR_API_KEY_HERE'
 ```
 "#;
 
