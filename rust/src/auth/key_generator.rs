@@ -1,53 +1,15 @@
 use std::io::{self, Write};
+
+use serde_json::{Value, json};
 use tracing::info;
 
+use crate::client::http_client::ANYTYPE_API_VERSION;
 use crate::config::Config;
 use crate::openapi::{get_base_url, load_openapi_spec};
 use crate::utils::{AnytypeMcpError, Result as McpResult};
 
-const AUTH_TEMPLATE: &str = r#"
-# Anytype API Key Setup
-
-To use the Anytype MCP Server, you need to configure your API key.
-
-## Option 1: Get API Key from Anytype App
-
-1. Open Anytype
-2. Go to Settings
-3. Navigate to API Keys
-4. Create a new API key
-5. Copy the API key
-
-## Option 2: Use this CLI tool
-
-This tool can help you generate an API key interactively.
-
-Base URL: {{base_url}}
-
-Please visit the Anytype application to generate your API key.
-
-## Configuration
-
-Add the following to your MCP client configuration:
-
-```json
-{
-  "mcpServers": {
-    "anytype": {
-      "command": "anytype-mcp",
-      "env": {
-        "ANYTYPE_API_KEY": "YOUR_API_KEY_HERE"
-      }
-    }
-  }
-}
-```
-
-Or set environment variables:
-```bash
-export ANYTYPE_API_KEY='YOUR_API_KEY_HERE'
-```
-"#;
+/// App name shown in the Anytype pairing dialog; matches the TS implementation.
+const APP_NAME: &str = "anytype_mcp_server";
 
 pub struct KeyGenerator {
     base_url: String,
@@ -79,83 +41,126 @@ impl KeyGenerator {
         Ok(Self { base_url, config })
     }
 
+    /// Run the interactive challenge flow: request a challenge, ask the user
+    /// for the 4-digit code shown in Anytype, and exchange it for an API key.
     pub async fn generate_interactive(&self) -> McpResult<()> {
-        info!("Starting interactive API key generation");
+        info!("Starting API key generation against {}", self.base_url);
+        println!("Requesting authentication challenge from {}", self.base_url);
 
-        // Simple string replacement instead of template engine
-        let output = AUTH_TEMPLATE.replace("{{base_url}}", &self.base_url);
+        let client = reqwest::Client::new();
+        let challenge_id = self.start_challenge(&client).await?;
 
-        println!("{}", output);
+        println!("A 4-digit code should now be displayed in your Anytype app.");
+        let code = Self::prompt("Enter the 4-digit code: ")?;
 
-        // Interactive prompts
-        self.prompt_for_key().await?;
+        let (api_key, api_version) = self
+            .complete_challenge(&client, &challenge_id, &code)
+            .await?;
+
+        println!("\n✅ Your API key: {}", api_key);
+        println!("\nAdd this to your MCP client configuration:\n");
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "mcpServers": {
+                    "anytype": {
+                        "command": "anytype-mcp",
+                        "env": {
+                            "ANYTYPE_API_KEY": api_key,
+                        }
+                    }
+                }
+            }))
+            .expect("static JSON structure serializes")
+        );
+        println!("\n(Anytype-Version: {})", api_version);
 
         Ok(())
     }
 
-    async fn prompt_for_key(&self) -> McpResult<()> {
-        print!("\nWould you like to test a connection with your API key? (y/N): ");
-        io::stdout().flush().map_err(AnytypeMcpError::Io)?;
+    /// `POST /v1/auth/challenges` — makes Anytype display a pairing code.
+    async fn start_challenge(&self, client: &reqwest::Client) -> McpResult<String> {
+        let response = client
+            .post(format!("{}/v1/auth/challenges", self.base_url))
+            .header("Anytype-Version", ANYTYPE_API_VERSION)
+            .json(&json!({ "app_name": APP_NAME }))
+            .send()
+            .await
+            .map_err(|e| {
+                AnytypeMcpError::Auth(format!(
+                    "Failed to start authentication: {}. Please ensure Anytype is running and reachable at {}.",
+                    e, self.base_url
+                ))
+            })?;
 
+        let status = response.status();
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|e| AnytypeMcpError::Auth(format!("Invalid challenge response: {}", e)))?;
+
+        body.get("challenge_id")
+            .and_then(Value::as_str)
+            .map(String::from)
+            .ok_or_else(|| {
+                AnytypeMcpError::Auth(format!(
+                    "Failed to get challenge ID (HTTP {}): {}",
+                    status, body
+                ))
+            })
+    }
+
+    /// `POST /v1/auth/api_keys` — exchanges the challenge + code for an API
+    /// key. Returns the key and the server's reported Anytype-Version.
+    async fn complete_challenge(
+        &self,
+        client: &reqwest::Client,
+        challenge_id: &str,
+        code: &str,
+    ) -> McpResult<(String, String)> {
+        let response = client
+            .post(format!("{}/v1/auth/api_keys", self.base_url))
+            .header("Anytype-Version", ANYTYPE_API_VERSION)
+            .json(&json!({ "challenge_id": challenge_id, "code": code }))
+            .send()
+            .await
+            .map_err(|e| {
+                AnytypeMcpError::Auth(format!("Failed to complete authentication: {}", e))
+            })?;
+
+        let status = response.status();
+        let api_version = response
+            .headers()
+            .get("anytype-version")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or(ANYTYPE_API_VERSION)
+            .to_string();
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|e| AnytypeMcpError::Auth(format!("Invalid API key response: {}", e)))?;
+
+        let api_key = body
+            .get("api_key")
+            .and_then(Value::as_str)
+            .map(String::from)
+            .ok_or_else(|| {
+                AnytypeMcpError::Auth(format!(
+                    "Failed to complete authentication (HTTP {}): {}",
+                    status, body
+                ))
+            })?;
+
+        Ok((api_key, api_version))
+    }
+
+    fn prompt(message: &str) -> McpResult<String> {
+        print!("{}", message);
+        io::stdout().flush().map_err(AnytypeMcpError::Io)?;
         let mut input = String::new();
         io::stdin()
             .read_line(&mut input)
             .map_err(AnytypeMcpError::Io)?;
-
-        if input.trim().to_lowercase() == "y" {
-            self.test_connection().await?;
-        }
-
-        Ok(())
-    }
-
-    async fn test_connection(&self) -> McpResult<()> {
-        print!("Enter your API key: ");
-        io::stdout().flush().map_err(AnytypeMcpError::Io)?;
-
-        let mut api_key = String::new();
-        io::stdin()
-            .read_line(&mut api_key)
-            .map_err(AnytypeMcpError::Io)?;
-        let api_key = api_key.trim();
-
-        if api_key.is_empty() {
-            println!("No API key provided.");
-            return Ok(());
-        }
-
-        info!("Testing connection with provided API key");
-
-        // Test the connection
-        let client = reqwest::Client::new();
-        let response = client
-            .get(format!("{}/health", self.base_url))
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header(
-                "Anytype-Version",
-                crate::client::http_client::ANYTYPE_API_VERSION,
-            )
-            .send()
-            .await;
-
-        match response {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    println!("✅ Connection successful!");
-                    println!("Your API key is working correctly.");
-                } else {
-                    println!("❌ Connection failed with status: {}", resp.status());
-                    if let Ok(text) = resp.text().await {
-                        println!("Error: {}", text);
-                    }
-                }
-            }
-            Err(e) => {
-                println!("❌ Connection failed: {}", e);
-                println!("Please check if the Anytype service is running and accessible.");
-            }
-        }
-
-        Ok(())
+        Ok(input.trim().to_string())
     }
 }
