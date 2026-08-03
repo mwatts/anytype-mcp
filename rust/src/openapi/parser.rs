@@ -610,10 +610,7 @@ impl OpenApiParser {
             .collect();
 
         // Icon unions: only the emoji variant is exposed.
-        if ref_names
-            .iter()
-            .any(|r| *r == "#/components/schemas/EmojiIcon")
-        {
+        if ref_names.contains(&"#/components/schemas/EmojiIcon") {
             let mut result = json!({
                 "type": "object",
                 "properties": {

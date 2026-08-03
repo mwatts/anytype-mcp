@@ -43,6 +43,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_path_params_excluded_from_body() {
+        // Path params are substituted into the URL; sending them again in the
+        // JSON body would corrupt API requests (e.g. create-object payloads).
+        let config = Config::default();
+        let client = HttpClient::new(&config, "https://httpbin.org".to_string()).unwrap();
+
+        let tool = McpTool {
+            name: "API-test-post".to_string(),
+            description: None,
+            input_schema: json!({"type": "object"}),
+            method: "POST".to_string(),
+            path: "/anything/{space_id}".to_string(),
+            operation_id: "test_post".to_string(),
+            file_upload_params: Vec::new(),
+        };
+
+        let params = json!({"space_id": "sp123", "name": "hello"});
+        let result = client.execute_tool(&tool, params).await.unwrap();
+
+        // httpbin echoes the request: URL got the path param, body did not.
+        assert!(result["url"].as_str().unwrap().ends_with("/anything/sp123"));
+        assert_eq!(result["json"]["name"], "hello");
+        assert!(result["json"].get("space_id").is_none());
+    }
+
+    #[tokio::test]
     async fn test_schema_conversion_edge_cases() {
         use crate::server::AnytypeJsonRpcServer;
 

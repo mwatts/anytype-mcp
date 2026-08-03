@@ -67,6 +67,7 @@ impl HttpClient {
             tool.name, tool.method, tool.path
         );
 
+        let path_params = Self::path_param_names(&tool.path);
         let url = self.build_url(&tool.path, &params)?;
         let method = self.parse_method(&tool.method)?;
 
@@ -77,16 +78,29 @@ impl HttpClient {
             request = request.header(key, value);
         }
 
-        // Handle request body and parameters
+        // Handle request body and parameters; path params are already
+        // substituted into the URL and must not repeat in query or body.
         request = match tool.method.to_uppercase().as_str() {
-            "GET" | "DELETE" => self.add_query_params(request, &params)?,
-            "POST" | "PUT" | "PATCH" => self.add_request_body(request, &params).await?,
+            "GET" | "DELETE" => self.add_query_params(request, &params, &path_params)?,
+            "POST" | "PUT" | "PATCH" => {
+                self.add_request_body(request, tool, &params, &path_params)
+                    .await?
+            }
             _ => request,
         };
 
         let response = request.send().await.map_err(AnytypeMcpError::HttpClient)?;
 
         self.handle_response(response).await
+    }
+
+    /// Names of `{placeholder}` path parameters in an operation path.
+    fn path_param_names(path: &str) -> Vec<String> {
+        path.split('{')
+            .skip(1)
+            .filter_map(|part| part.split('}').next())
+            .map(String::from)
+            .collect()
     }
 
     fn build_url(&self, path: &str, params: &Value) -> McpResult<Url> {
@@ -119,11 +133,11 @@ impl HttpClient {
         &self,
         mut request: RequestBuilder,
         params: &Value,
+        path_params: &[String],
     ) -> McpResult<RequestBuilder> {
         if let Some(obj) = params.as_object() {
             for (key, value) in obj {
-                if !key.starts_with('_') {
-                    // Skip internal parameters
+                if !key.starts_with('_') && !path_params.contains(key) {
                     let value_str = match value {
                         Value::String(s) => s.clone(),
                         Value::Null => continue,
@@ -139,22 +153,22 @@ impl HttpClient {
     async fn add_request_body(
         &self,
         mut request: RequestBuilder,
+        tool: &McpTool,
         params: &Value,
+        path_params: &[String],
     ) -> McpResult<RequestBuilder> {
-        // Check if this is a file upload
-        if let Some(obj) = params.as_object() {
-            if obj.contains_key("_file_upload") {
-                return self.add_multipart_body(request, params).await;
-            }
+        if !tool.file_upload_params.is_empty() {
+            return self
+                .add_multipart_body(request, tool, params, path_params)
+                .await;
         }
 
-        // Regular JSON body
+        // Regular JSON body: everything except path and internal parameters
         request = request.header("Content-Type", "application/json");
 
-        // Filter out path parameters and internal parameters
         let mut body_params = params.clone();
         if let Some(obj) = body_params.as_object_mut() {
-            obj.retain(|key, _| !key.starts_with('_'));
+            obj.retain(|key, _| !key.starts_with('_') && !path_params.contains(key));
         }
 
         Ok(request.json(&body_params))
@@ -163,61 +177,72 @@ impl HttpClient {
     async fn add_multipart_body(
         &self,
         request: RequestBuilder,
+        tool: &McpTool,
         params: &Value,
+        path_params: &[String],
     ) -> McpResult<RequestBuilder> {
         let mut form = reqwest::multipart::Form::new();
 
         if let Some(obj) = params.as_object() {
             for (key, value) in obj {
-                match key.as_str() {
-                    "_file_upload" => {
-                        // Handle file upload
-                        if let Some(file_data) = value.as_str() {
-                            // Decode base64 if needed, or handle as binary
-                            let bytes = if file_data.starts_with("data:") {
-                                // Handle data URLs
-                                self.decode_data_url(file_data)?
-                            } else {
-                                // Assume it's a file path or base64
-                                if std::path::Path::new(file_data).exists() {
-                                    tokio::fs::read(file_data)
-                                        .await
-                                        .map_err(AnytypeMcpError::Io)?
-                                } else {
-                                    // Try base64 decode
-                                    general_purpose::STANDARD.decode(file_data).map_err(|e| {
-                                        AnytypeMcpError::Validation(format!(
-                                            "Invalid file data: {}",
-                                            e
-                                        ))
-                                    })?
-                                }
-                            };
-
-                            let part = reqwest::multipart::Part::bytes(bytes)
-                                .file_name("upload")
-                                .mime_str("application/octet-stream")
-                                .map_err(|e| {
-                                    AnytypeMcpError::Config(format!("Invalid MIME type: {}", e))
-                                })?;
-
-                            form = form.part("file", part);
+                if key.starts_with('_') || path_params.contains(key) {
+                    continue;
+                }
+                if tool.file_upload_params.contains(key) {
+                    // File parameters accept a local file path or a list of paths.
+                    let paths: Vec<&str> = match value {
+                        Value::String(s) => vec![s.as_str()],
+                        Value::Array(items) => items.iter().filter_map(Value::as_str).collect(),
+                        Value::Null => Vec::new(),
+                        _ => {
+                            return Err(AnytypeMcpError::Validation(format!(
+                                "File path must be provided for parameter: {}",
+                                key
+                            )));
                         }
+                    };
+                    for path in paths {
+                        form = form.part(key.clone(), self.file_part(path).await?);
                     }
-                    key if !key.starts_with('_') => {
-                        // Regular form field
-                        let value_str = match value {
-                            Value::String(s) => s.clone(),
-                            _ => value.to_string().trim_matches('"').to_string(),
-                        };
-                        form = form.text(key.to_string(), value_str);
-                    }
-                    _ => {} // Skip internal parameters
+                } else {
+                    let value_str = match value {
+                        Value::String(s) => s.clone(),
+                        Value::Null => continue,
+                        _ => value.to_string().trim_matches('"').to_string(),
+                    };
+                    form = form.text(key.clone(), value_str);
                 }
             }
         }
 
         Ok(request.multipart(form))
+    }
+
+    /// Build a multipart part from a local file path (preferred), a data URL,
+    /// or raw base64 content.
+    async fn file_part(&self, file_data: &str) -> McpResult<reqwest::multipart::Part> {
+        let (bytes, file_name) = if file_data.starts_with("data:") {
+            (self.decode_data_url(file_data)?, "upload".to_string())
+        } else if std::path::Path::new(file_data).exists() {
+            let bytes = tokio::fs::read(file_data)
+                .await
+                .map_err(AnytypeMcpError::Io)?;
+            let name = std::path::Path::new(file_data)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "upload".to_string());
+            (bytes, name)
+        } else {
+            let bytes = general_purpose::STANDARD
+                .decode(file_data)
+                .map_err(|e| AnytypeMcpError::Validation(format!("Invalid file data: {}", e)))?;
+            (bytes, "upload".to_string())
+        };
+
+        reqwest::multipart::Part::bytes(bytes)
+            .file_name(file_name)
+            .mime_str("application/octet-stream")
+            .map_err(|e| AnytypeMcpError::Config(format!("Invalid MIME type: {}", e)))
     }
 
     fn decode_data_url(&self, data_url: &str) -> McpResult<Vec<u8>> {
