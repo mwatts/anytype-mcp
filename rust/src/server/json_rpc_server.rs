@@ -3,16 +3,15 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use rmcp::{
-    Error as McpError, RoleServer, ServerHandler, model::*,
+    ErrorData as McpError, RoleServer, ServerHandler, ServiceExt, model::*,
     service::RequestContext, transport::stdio,
-    ServiceExt,
 };
-use serde_json::{json, Value, Map};
-use tracing::{info, error};
+use serde_json::{Map, Value, json};
+use tracing::{error, info};
 
-use crate::config::Config;
 use crate::client::HttpClient;
-use crate::openapi::{load_openapi_spec, get_base_url, OpenApiParser, McpTool};
+use crate::config::Config;
+use crate::openapi::{McpTool, OpenApiParser, get_base_url, load_openapi_spec};
 use crate::utils::{AnytypeMcpError, Result as McpResult};
 
 /// JSON-RPC MCP Server that converts OpenAPI specs to MCP tools
@@ -38,12 +37,11 @@ impl AnytypeJsonRpcServer {
             info!("Loading OpenAPI specification from: {}", path);
             if path.starts_with("http") {
                 // Download from URL
-                let response = reqwest::get(&path).await
+                let response = reqwest::get(&path)
+                    .await
                     .map_err(AnytypeMcpError::HttpClient)?;
-                let content = response.text().await
-                    .map_err(AnytypeMcpError::HttpClient)?;
-                serde_json::from_str(&content)
-                    .map_err(AnytypeMcpError::Json)?
+                let content = response.text().await.map_err(AnytypeMcpError::HttpClient)?;
+                serde_json::from_str(&content).map_err(AnytypeMcpError::Json)?
             } else {
                 load_openapi_spec(&path).await?
             }
@@ -60,18 +58,19 @@ impl AnytypeJsonRpcServer {
                 Ok(spec) => spec,
                 Err(_) => {
                     info!("Failed to parse embedded spec, falling back to remote URL");
-                    let response = reqwest::get("https://api.anytype.io/openapi.json").await
+                    let response = reqwest::get("https://api.anytype.io/openapi.json")
+                        .await
                         .map_err(AnytypeMcpError::HttpClient)?;
-                    let content = response.text().await
-                        .map_err(AnytypeMcpError::HttpClient)?;
-                    serde_json::from_str(&content)
-                        .map_err(AnytypeMcpError::Json)?
+                    let content = response.text().await.map_err(AnytypeMcpError::HttpClient)?;
+                    serde_json::from_str(&content).map_err(AnytypeMcpError::Json)?
                 }
             }
         };
 
         // Get base URL
-        let base_url = config.base_url.clone()
+        let base_url = config
+            .base_url
+            .clone()
             .or_else(|| get_base_url(&spec))
             .unwrap_or_else(|| "http://localhost:31009".to_string());
 
@@ -88,7 +87,8 @@ impl AnytypeJsonRpcServer {
         info!("Converted {} OpenAPI operations to MCP tools", tools.len());
 
         // Create tool map for quick lookup
-        let tool_map: HashMap<String, McpTool> = tools.iter()
+        let tool_map: HashMap<String, McpTool> = tools
+            .iter()
             .map(|tool| (tool.name.clone(), tool.clone()))
             .collect();
 
@@ -120,7 +120,10 @@ impl AnytypeJsonRpcServer {
 
     /// Start the server with SSE transport
     pub async fn start_sse(self, port: u16) -> Result<()> {
-        info!("Starting JSON-RPC MCP server with SSE transport on port {}", port);
+        info!(
+            "Starting JSON-RPC MCP server with SSE transport on port {}",
+            port
+        );
 
         // For now, fall back to stdio until SSE transport is properly configured
         info!("SSE transport not yet properly configured, falling back to stdio");
@@ -129,20 +132,15 @@ impl AnytypeJsonRpcServer {
 
     /// Get server information
     pub fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::V_2024_11_05,
-            capabilities: ServerCapabilities::builder()
-                .enable_tools()
-                .build(),
-            server_info: Implementation {
-                name: "anytype-mcp-server".to_string(),
-                version: "1.0.0".to_string(),
-            },
-            instructions: Some(format!(
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new(
+                "anytype-mcp-server",
+                env!("CARGO_PKG_VERSION"),
+            ))
+            .with_instructions(format!(
                 "This server provides {} tools converted from an OpenAPI specification. Each tool corresponds to an API endpoint that can be called.",
                 self.tools.len()
-            )),
-        }
+            ))
     }
 
     /// Get the list of tools
@@ -194,109 +192,65 @@ impl ServerHandler for AnytypeJsonRpcServer {
 
     async fn list_tools(
         &self,
-        _request: Option<PaginatedRequestParamInner>,
+        _request: Option<PaginatedRequestParams>,
         _: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
-        let tools: Vec<Tool> = self.tools.iter().map(|mcp_tool| {
-            Tool {
-                name: mcp_tool.name.clone().into(),
-                description: mcp_tool.description.clone().map(|d| d.into()).unwrap_or_else(|| "".into()),
-                input_schema: Arc::new(Self::convert_schema_to_tool_input(&mcp_tool.input_schema).as_object().unwrap().clone()),
-            }
-        }).collect();
+        let tools: Vec<Tool> = self
+            .tools
+            .iter()
+            .map(|mcp_tool| {
+                Tool::new_with_raw(
+                    mcp_tool.name.clone(),
+                    mcp_tool.description.clone().map(Into::into),
+                    Arc::new(
+                        Self::convert_schema_to_tool_input(&mcp_tool.input_schema)
+                            .as_object()
+                            .unwrap()
+                            .clone(),
+                    ),
+                )
+            })
+            .collect();
 
-        Ok(ListToolsResult {
-            tools,
-            next_cursor: None,
-        })
+        Ok(ListToolsResult::with_all_items(tools))
     }
 
     async fn call_tool(
         &self,
-        CallToolRequestParam { name, arguments }: CallToolRequestParam,
+        request: CallToolRequestParams,
         _: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, McpError> {
+    ) -> Result<CallToolResponse, McpError> {
+        let CallToolRequestParams {
+            name, arguments, ..
+        } = request;
         info!("Calling tool: {}", name);
 
         // Find the tool - convert name to string for lookup
-        let tool = self.tool_map.get(name.as_ref())
+        let tool = self
+            .tool_map
+            .get(name.as_ref())
             .ok_or_else(|| McpError::invalid_params("Tool not found", None))?;
 
         // Execute the tool using the HTTP client
-        let args = arguments.unwrap_or_else(|| Map::new());
+        let args = arguments.unwrap_or_else(Map::new);
         let args_value = Value::Object(args);
 
         match self.http_client.execute_tool(tool, args_value).await {
             Ok(result) => {
                 info!("Tool '{}' executed successfully", name);
-                Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string())
-                )]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string()),
+                )])
+                .into())
             }
             Err(e) => {
                 error!("Tool '{}' execution failed: {:?}", name, e);
-                Ok(CallToolResult::error(vec![Content::text(
-                    format!("Tool execution failed: {}", e)
-                )]))
+                Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+                    "Tool execution failed: {}",
+                    e
+                ))])
+                .into())
             }
         }
-    }
-
-    async fn list_resources(
-        &self,
-        _request: Option<PaginatedRequestParamInner>,
-        _: RequestContext<RoleServer>,
-    ) -> Result<ListResourcesResult, McpError> {
-        Ok(ListResourcesResult {
-            resources: vec![],
-            next_cursor: None,
-        })
-    }
-
-    async fn read_resource(
-        &self,
-        _request: ReadResourceRequestParam,
-        _: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, McpError> {
-        Err(McpError::invalid_request("read_resource not supported", None))
-    }
-
-    async fn list_prompts(
-        &self,
-        _request: Option<PaginatedRequestParamInner>,
-        _: RequestContext<RoleServer>,
-    ) -> Result<ListPromptsResult, McpError> {
-        Ok(ListPromptsResult {
-            prompts: vec![],
-            next_cursor: None,
-        })
-    }
-
-    async fn get_prompt(
-        &self,
-        _request: GetPromptRequestParam,
-        _: RequestContext<RoleServer>,
-    ) -> Result<GetPromptResult, McpError> {
-        Err(McpError::invalid_request("get_prompt not supported", None))
-    }
-
-    async fn list_resource_templates(
-        &self,
-        _request: Option<PaginatedRequestParamInner>,
-        _: RequestContext<RoleServer>,
-    ) -> Result<ListResourceTemplatesResult, McpError> {
-        Ok(ListResourceTemplatesResult {
-            resource_templates: vec![],
-            next_cursor: None,
-        })
-    }
-
-    async fn initialize(
-        &self,
-        _request: InitializeRequestParam,
-        _: RequestContext<RoleServer>,
-    ) -> Result<InitializeResult, McpError> {
-        info!("Initializing MCP server");
-        Ok(self.get_info())
     }
 }

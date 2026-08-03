@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 use crate::config::Config;
 use crate::server::AnytypeJsonRpcServer;
 
 /// Server mode enum to determine which transport to use
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum ServerMode {
     /// Local JSON-RPC server using stdio transport
+    #[default]
     JsonRpcStdio,
     /// Local JSON-RPC server using SSE transport
     JsonRpcSse { port: u16 },
@@ -44,34 +45,39 @@ impl HybridMcpServer {
         match &self.mode {
             ServerMode::JsonRpcStdio => {
                 info!("Starting JSON-RPC server with stdio transport");
-                let server = AnytypeJsonRpcServer::new(
-                    self.spec_path.clone(),
-                    (*self.config).clone()
-                ).await?;
+                let server =
+                    AnytypeJsonRpcServer::new(self.spec_path.clone(), (*self.config).clone())
+                        .await?;
                 server.start_stdio().await
-            },
+            }
             ServerMode::JsonRpcSse { port } => {
-                info!("Starting JSON-RPC server with SSE transport on port {}", port);
-                let server = AnytypeJsonRpcServer::new(
-                    self.spec_path.clone(),
-                    (*self.config).clone()
-                ).await?;
+                info!(
+                    "Starting JSON-RPC server with SSE transport on port {}",
+                    port
+                );
+                let server =
+                    AnytypeJsonRpcServer::new(self.spec_path.clone(), (*self.config).clone())
+                        .await?;
                 server.start_sse(*port).await
-            },
+            }
             ServerMode::JsonRpcStreamableHttp { port } => {
-                info!("Starting JSON-RPC server with Streamable HTTP transport on port {}", port);
+                info!(
+                    "Starting JSON-RPC server with Streamable HTTP transport on port {}",
+                    port
+                );
                 // For now, we'll use SSE as streamable HTTP requires additional implementation
                 warn!("Streamable HTTP transport not yet implemented, falling back to SSE");
-                let server = AnytypeJsonRpcServer::new(
-                    self.spec_path.clone(),
-                    (*self.config).clone()
-                ).await?;
+                let server =
+                    AnytypeJsonRpcServer::new(self.spec_path.clone(), (*self.config).clone())
+                        .await?;
                 server.start_sse(*port).await
-            },
+            }
             ServerMode::RemoteService => {
                 warn!("Remote service mode is deprecated and will be removed in future versions");
                 error!("Legacy remote service mode is no longer supported");
-                Err(anyhow::anyhow!("Remote service mode is deprecated. Please use JSON-RPC mode instead."))
+                Err(anyhow::anyhow!(
+                    "Remote service mode is deprecated. Please use JSON-RPC mode instead."
+                ))
             }
         }
     }
@@ -79,11 +85,12 @@ impl HybridMcpServer {
     /// Get server information and capabilities
     pub async fn get_server_info(&self) -> Result<String> {
         match &self.mode {
-            ServerMode::JsonRpcStdio | ServerMode::JsonRpcSse { .. } | ServerMode::JsonRpcStreamableHttp { .. } => {
-                let server = AnytypeJsonRpcServer::new(
-                    self.spec_path.clone(),
-                    (*self.config).clone()
-                ).await?;
+            ServerMode::JsonRpcStdio
+            | ServerMode::JsonRpcSse { .. }
+            | ServerMode::JsonRpcStreamableHttp { .. } => {
+                let server =
+                    AnytypeJsonRpcServer::new(self.spec_path.clone(), (*self.config).clone())
+                        .await?;
 
                 let info = server.get_info();
                 Ok(format!(
@@ -94,27 +101,28 @@ impl HybridMcpServer {
                     info.capabilities,
                     server.get_tools().len()
                 ))
-            },
-            ServerMode::RemoteService => {
-                Ok("Remote service mode is deprecated".to_string())
             }
+            ServerMode::RemoteService => Ok("Remote service mode is deprecated".to_string()),
         }
     }
 
     /// List available tools
     pub async fn list_tools(&self) -> Result<Vec<String>> {
         match &self.mode {
-            ServerMode::JsonRpcStdio | ServerMode::JsonRpcSse { .. } | ServerMode::JsonRpcStreamableHttp { .. } => {
-                let server = AnytypeJsonRpcServer::new(
-                    self.spec_path.clone(),
-                    (*self.config).clone()
-                ).await?;
+            ServerMode::JsonRpcStdio
+            | ServerMode::JsonRpcSse { .. }
+            | ServerMode::JsonRpcStreamableHttp { .. } => {
+                let server =
+                    AnytypeJsonRpcServer::new(self.spec_path.clone(), (*self.config).clone())
+                        .await?;
 
-                Ok(server.get_tools().iter().map(|tool| tool.name.clone()).collect())
-            },
-            ServerMode::RemoteService => {
-                Ok(vec!["Remote service mode is deprecated".to_string()])
+                Ok(server
+                    .get_tools()
+                    .iter()
+                    .map(|tool| tool.name.clone())
+                    .collect())
             }
+            ServerMode::RemoteService => Ok(vec!["Remote service mode is deprecated".to_string()]),
         }
     }
 
@@ -135,32 +143,27 @@ impl HybridMcpServer {
         match &self.mode {
             ServerMode::JsonRpcStdio => {
                 info!("Stdio transport validated");
-            },
+            }
             ServerMode::JsonRpcSse { port } | ServerMode::JsonRpcStreamableHttp { port } => {
                 if *port == 0 {
                     return Err(anyhow::anyhow!("Invalid port number: {}", port));
                 }
                 info!("HTTP transport on port {} validated", port);
-            },
+            }
             ServerMode::RemoteService => {
                 return Err(anyhow::anyhow!("Remote service mode is deprecated"));
             }
         }
 
         // Create server to validate configuration
-        let server = AnytypeJsonRpcServer::new(
-            self.spec_path.clone(),
-            (*self.config).clone()
-        ).await?;
+        let server =
+            AnytypeJsonRpcServer::new(self.spec_path.clone(), (*self.config).clone()).await?;
 
-        info!("Server configuration valid with {} tools", server.get_tools().len());
+        info!(
+            "Server configuration valid with {} tools",
+            server.get_tools().len()
+        );
         Ok(())
-    }
-}
-
-impl Default for ServerMode {
-    fn default() -> Self {
-        ServerMode::JsonRpcStdio
     }
 }
 
@@ -197,7 +200,11 @@ mod tests {
         assert!(tools.is_ok());
         // Should load tools from embedded OpenAPI spec by default
         let tool_count = tools.unwrap().len();
-        assert!(tool_count > 0, "Expected tools to be loaded from embedded spec, got: {}", tool_count);
+        assert!(
+            tool_count > 0,
+            "Expected tools to be loaded from embedded spec, got: {}",
+            tool_count
+        );
     }
 
     #[test]

@@ -35,7 +35,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Created test tool: {:?}", test_tool);
 
     // Test the schema conversion function
-    let converted_schema = AnytypeJsonRpcServer::convert_schema_to_tool_input(&test_tool.input_schema);
+    let converted_schema =
+        AnytypeJsonRpcServer::convert_schema_to_tool_input(&test_tool.input_schema);
 
     println!("Converted schema: {:?}", converted_schema);
     println!("✅ Schema conversion test successful!");

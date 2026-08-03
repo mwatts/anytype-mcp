@@ -1,13 +1,13 @@
+use crate::config::Config;
+use crate::openapi::McpTool;
+use crate::utils::{AnytypeMcpError, Result as McpResult};
+use base64::{Engine as _, engine::general_purpose};
 use reqwest::{Client, Method, RequestBuilder, Response};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::{debug, warn, error};
+use tracing::{debug, error, warn};
 use url::Url;
-use base64::{Engine as _, engine::general_purpose};
-use crate::config::Config;
-use crate::openapi::McpTool;
-use crate::utils::{AnytypeMcpError, Result as McpResult};
 
 #[derive(Clone)]
 pub struct HttpClient {
@@ -55,12 +55,11 @@ impl HttpClient {
         })
     }
 
-    pub async fn execute_tool(
-        &self,
-        tool: &McpTool,
-        params: Value,
-    ) -> McpResult<Value> {
-        debug!("Executing tool: {} with method: {} path: {}", tool.name, tool.method, tool.path);
+    pub async fn execute_tool(&self, tool: &McpTool, params: Value) -> McpResult<Value> {
+        debug!(
+            "Executing tool: {} with method: {} path: {}",
+            tool.name, tool.method, tool.path
+        );
 
         let url = self.build_url(&tool.path, &params)?;
         let method = self.parse_method(&tool.method)?;
@@ -74,17 +73,12 @@ impl HttpClient {
 
         // Handle request body and parameters
         request = match tool.method.to_uppercase().as_str() {
-            "GET" | "DELETE" => {
-                self.add_query_params(request, &params)?
-            }
-            "POST" | "PUT" | "PATCH" => {
-                self.add_request_body(request, &params).await?
-            }
+            "GET" | "DELETE" => self.add_query_params(request, &params)?,
+            "POST" | "PUT" | "PATCH" => self.add_request_body(request, &params).await?,
             _ => request,
         };
 
-        let response = request.send().await
-            .map_err(AnytypeMcpError::HttpClient)?;
+        let response = request.send().await.map_err(AnytypeMcpError::HttpClient)?;
 
         self.handle_response(response).await
     }
@@ -106,19 +100,24 @@ impl HttpClient {
             }
         }
 
-        Url::parse(&url_str)
-            .map_err(|e| AnytypeMcpError::Config(format!("Invalid URL: {}", e)))
+        Url::parse(&url_str).map_err(|e| AnytypeMcpError::Config(format!("Invalid URL: {}", e)))
     }
 
     fn parse_method(&self, method: &str) -> McpResult<Method> {
-        method.parse()
+        method
+            .parse()
             .map_err(|e| AnytypeMcpError::Config(format!("Invalid HTTP method: {}", e)))
     }
 
-    fn add_query_params(&self, mut request: RequestBuilder, params: &Value) -> McpResult<RequestBuilder> {
+    fn add_query_params(
+        &self,
+        mut request: RequestBuilder,
+        params: &Value,
+    ) -> McpResult<RequestBuilder> {
         if let Some(obj) = params.as_object() {
             for (key, value) in obj {
-                if !key.starts_with('_') { // Skip internal parameters
+                if !key.starts_with('_') {
+                    // Skip internal parameters
                     let value_str = match value {
                         Value::String(s) => s.clone(),
                         Value::Null => continue,
@@ -131,7 +130,11 @@ impl HttpClient {
         Ok(request)
     }
 
-    async fn add_request_body(&self, mut request: RequestBuilder, params: &Value) -> McpResult<RequestBuilder> {
+    async fn add_request_body(
+        &self,
+        mut request: RequestBuilder,
+        params: &Value,
+    ) -> McpResult<RequestBuilder> {
         // Check if this is a file upload
         if let Some(obj) = params.as_object() {
             if obj.contains_key("_file_upload") {
@@ -151,7 +154,11 @@ impl HttpClient {
         Ok(request.json(&body_params))
     }
 
-    async fn add_multipart_body(&self, request: RequestBuilder, params: &Value) -> McpResult<RequestBuilder> {
+    async fn add_multipart_body(
+        &self,
+        request: RequestBuilder,
+        params: &Value,
+    ) -> McpResult<RequestBuilder> {
         let mut form = reqwest::multipart::Form::new();
 
         if let Some(obj) = params.as_object() {
@@ -167,19 +174,26 @@ impl HttpClient {
                             } else {
                                 // Assume it's a file path or base64
                                 if std::path::Path::new(file_data).exists() {
-                                    tokio::fs::read(file_data).await
+                                    tokio::fs::read(file_data)
+                                        .await
                                         .map_err(AnytypeMcpError::Io)?
                                 } else {
                                     // Try base64 decode
-                                    general_purpose::STANDARD.decode(file_data)
-                                        .map_err(|e| AnytypeMcpError::Validation(format!("Invalid file data: {}", e)))?
+                                    general_purpose::STANDARD.decode(file_data).map_err(|e| {
+                                        AnytypeMcpError::Validation(format!(
+                                            "Invalid file data: {}",
+                                            e
+                                        ))
+                                    })?
                                 }
                             };
 
                             let part = reqwest::multipart::Part::bytes(bytes)
                                 .file_name("upload")
                                 .mime_str("application/octet-stream")
-                                .map_err(|e| AnytypeMcpError::Config(format!("Invalid MIME type: {}", e)))?;
+                                .map_err(|e| {
+                                    AnytypeMcpError::Config(format!("Invalid MIME type: {}", e))
+                                })?;
 
                             form = form.part("file", part);
                         }
@@ -205,13 +219,16 @@ impl HttpClient {
         if let Some(comma_pos) = data_url.find(',') {
             let data_part = &data_url[comma_pos + 1..];
             if data_url[..comma_pos].contains("base64") {
-                general_purpose::STANDARD.decode(data_part)
+                general_purpose::STANDARD
+                    .decode(data_part)
                     .map_err(|e| AnytypeMcpError::Validation(format!("Invalid base64 data: {}", e)))
             } else {
                 Ok(data_part.as_bytes().to_vec())
             }
         } else {
-            Err(AnytypeMcpError::Validation("Invalid data URL format".to_string()))
+            Err(AnytypeMcpError::Validation(
+                "Invalid data URL format".to_string(),
+            ))
         }
     }
 
@@ -222,36 +239,37 @@ impl HttpClient {
         debug!("Response status: {}", status);
 
         if !status.is_success() {
-            let error_text = response.text().await
+            let error_text = response
+                .text()
+                .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             error!("HTTP error {}: {}", status, error_text);
-            return Err(AnytypeMcpError::ToolExecution(
-                format!("HTTP {} error: {}", status, error_text)
-            ));
+            return Err(AnytypeMcpError::ToolExecution(format!(
+                "HTTP {} error: {}",
+                status, error_text
+            )));
         }
 
         // Try to parse as JSON first
-        let content_type = headers.get("content-type")
+        let content_type = headers
+            .get("content-type")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
 
         if content_type.contains("application/json") {
-            let text = response.text().await
-                .map_err(AnytypeMcpError::HttpClient)?;
+            let text = response.text().await.map_err(AnytypeMcpError::HttpClient)?;
 
             if text.is_empty() {
                 return Ok(Value::Null);
             }
 
-            serde_json::from_str(&text)
-                .map_err(|e| {
-                    warn!("Failed to parse JSON response: {}", e);
-                    AnytypeMcpError::Json(e)
-                })
+            serde_json::from_str(&text).map_err(|e| {
+                warn!("Failed to parse JSON response: {}", e);
+                AnytypeMcpError::Json(e)
+            })
         } else {
             // For non-JSON responses, return as string
-            let text = response.text().await
-                .map_err(AnytypeMcpError::HttpClient)?;
+            let text = response.text().await.map_err(AnytypeMcpError::HttpClient)?;
             Ok(Value::String(text))
         }
     }

@@ -1,9 +1,9 @@
-use std::collections::HashMap;
 use openapiv3::{OpenAPI, Operation, Parameter, ReferenceOr, Schema, Type};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use tracing::{debug, warn};
 
-use crate::utils::{Result as McpResult, AnytypeMcpError};
+use crate::utils::{AnytypeMcpError, Result as McpResult};
 
 // MCP Tool representation
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -30,7 +30,7 @@ impl OpenApiParser {
 
         if self.spec.info.title.is_empty() {
             return Err(AnytypeMcpError::Config(
-                "OpenAPI specification must have a title".to_string()
+                "OpenAPI specification must have a title".to_string(),
             ));
         }
 
@@ -77,14 +77,21 @@ impl OpenApiParser {
         Ok(tools)
     }
 
-    fn process_operation(&self, path: &str, method: &str, operation: &Operation) -> McpResult<McpTool> {
+    fn process_operation(
+        &self,
+        path: &str,
+        method: &str,
+        operation: &Operation,
+    ) -> McpResult<McpTool> {
         let default_id = format!("{}_{}", method.to_lowercase(), path.replace('/', "_"));
-        let operation_id = operation.operation_id.as_deref()
-            .unwrap_or(&default_id);
+        let operation_id = operation.operation_id.as_deref().unwrap_or(&default_id);
 
         let mut tool = McpTool {
             name: operation_id.to_string(),
-            description: operation.description.clone().or_else(|| operation.summary.clone()),
+            description: operation
+                .description
+                .clone()
+                .or_else(|| operation.summary.clone()),
             input_schema: json!({
                 "type": "object",
                 "properties": {},
@@ -176,7 +183,10 @@ impl OpenApiParser {
         }
     }
 
-    fn convert_boxed_schema_or_ref(&self, schema_ref: &ReferenceOr<Box<Schema>>) -> McpResult<Value> {
+    fn convert_boxed_schema_or_ref(
+        &self,
+        schema_ref: &ReferenceOr<Box<Schema>>,
+    ) -> McpResult<Value> {
         match schema_ref {
             ReferenceOr::Item(boxed_schema) => self.convert_schema(boxed_schema),
             ReferenceOr::Reference { reference } => {
@@ -197,16 +207,17 @@ impl OpenApiParser {
                         json_schema["type"] = json!("string");
 
                         // Handle format
-                        match &string_type.format {
-                            openapiv3::VariantOrUnknownOrEmpty::Item(format) => {
-                                json_schema["format"] = json!(format!("{:?}", format));
-                            }
-                            _ => {}
+                        if let openapiv3::VariantOrUnknownOrEmpty::Item(format) =
+                            &string_type.format
+                        {
+                            json_schema["format"] = json!(format!("{:?}", format));
                         }
 
                         // Handle enumeration
                         if !string_type.enumeration.is_empty() {
-                            let enum_values: Vec<_> = string_type.enumeration.iter()
+                            let enum_values: Vec<_> = string_type
+                                .enumeration
+                                .iter()
                                 .filter_map(|opt| opt.as_ref())
                                 .collect();
                             if !enum_values.is_empty() {
@@ -217,21 +228,19 @@ impl OpenApiParser {
                     Type::Number(number_type) => {
                         json_schema["type"] = json!("number");
 
-                        match &number_type.format {
-                            openapiv3::VariantOrUnknownOrEmpty::Item(format) => {
-                                json_schema["format"] = json!(format!("{:?}", format));
-                            }
-                            _ => {}
+                        if let openapiv3::VariantOrUnknownOrEmpty::Item(format) =
+                            &number_type.format
+                        {
+                            json_schema["format"] = json!(format!("{:?}", format));
                         }
                     }
                     Type::Integer(integer_type) => {
                         json_schema["type"] = json!("integer");
 
-                        match &integer_type.format {
-                            openapiv3::VariantOrUnknownOrEmpty::Item(format) => {
-                                json_schema["format"] = json!(format!("{:?}", format));
-                            }
-                            _ => {}
+                        if let openapiv3::VariantOrUnknownOrEmpty::Item(format) =
+                            &integer_type.format
+                        {
+                            json_schema["format"] = json!(format!("{:?}", format));
                         }
                     }
                     Type::Object(object_type) => {
@@ -240,7 +249,10 @@ impl OpenApiParser {
                         if !object_type.properties.is_empty() {
                             let mut properties = HashMap::new();
                             for (key, schema_ref) in &object_type.properties {
-                                properties.insert(key.clone(), self.convert_boxed_schema_or_ref(schema_ref)?);
+                                properties.insert(
+                                    key.clone(),
+                                    self.convert_boxed_schema_or_ref(schema_ref)?,
+                                );
                             }
                             json_schema["properties"] = json!(properties);
                         }

@@ -8,7 +8,6 @@ pub use json_rpc_server::AnytypeJsonRpcServer;
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use tokio;
 
     use crate::server::AnytypeJsonRpcServer;
 

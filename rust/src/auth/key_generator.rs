@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use tracing::info;
 
 use crate::config::Config;
-use crate::openapi::{load_openapi_spec, get_base_url};
+use crate::openapi::{get_base_url, load_openapi_spec};
 use crate::utils::{AnytypeMcpError, Result as McpResult};
 
 const AUTH_TEMPLATE: &str = r#"
@@ -60,7 +60,9 @@ impl KeyGenerator {
         let base_url = if let Some(spec_path) = spec_path {
             if spec_path.starts_with("http") {
                 // For remote specs, try to extract base URL from the URL
-                spec_path.rsplit_once('/').map(|s| s.0.to_string())
+                spec_path
+                    .rsplit_once('/')
+                    .map(|s| s.0.to_string())
                     .unwrap_or_else(|| "http://localhost:31009".to_string())
             } else {
                 // Load local spec to get base URL
@@ -68,7 +70,9 @@ impl KeyGenerator {
                 get_base_url(&spec).unwrap_or_else(|| "http://localhost:31009".to_string())
             }
         } else {
-            config.base_url.clone()
+            config
+                .base_url
+                .clone()
                 .unwrap_or_else(|| "http://localhost:31009".to_string())
         };
 
@@ -94,7 +98,9 @@ impl KeyGenerator {
         io::stdout().flush().map_err(AnytypeMcpError::Io)?;
 
         let mut input = String::new();
-        io::stdin().read_line(&mut input).map_err(AnytypeMcpError::Io)?;
+        io::stdin()
+            .read_line(&mut input)
+            .map_err(AnytypeMcpError::Io)?;
 
         if input.trim().to_lowercase() == "y" {
             self.test_connection().await?;
@@ -108,7 +114,9 @@ impl KeyGenerator {
         io::stdout().flush().map_err(AnytypeMcpError::Io)?;
 
         let mut api_key = String::new();
-        io::stdin().read_line(&mut api_key).map_err(AnytypeMcpError::Io)?;
+        io::stdin()
+            .read_line(&mut api_key)
+            .map_err(AnytypeMcpError::Io)?;
         let api_key = api_key.trim();
 
         if api_key.is_empty() {
@@ -121,7 +129,7 @@ impl KeyGenerator {
         // Test the connection
         let client = reqwest::Client::new();
         let response = client
-            .get(&format!("{}/health", self.base_url))
+            .get(format!("{}/health", self.base_url))
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Anytype-Version", "2025-05-20")
             .send()

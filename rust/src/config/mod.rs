@@ -1,5 +1,8 @@
 use anyhow::Result;
-use figment::{Figment, providers::{Format, Json, Toml, Env}};
+use figment::{
+    Figment,
+    providers::{Env, Format, Json, Toml},
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;

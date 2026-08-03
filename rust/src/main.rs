@@ -1,17 +1,17 @@
+use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::info;
-use anyhow::Result;
 
-mod config;
-mod server;
-mod openapi;
-mod client;
 mod auth;
+mod client;
+mod config;
+mod openapi;
+mod server;
 mod utils;
 
+use auth::KeyGenerator;
 use config::Config;
 use server::{HybridMcpServer, ServerMode};
-use auth::KeyGenerator;
 
 #[derive(Parser)]
 #[command(name = "anytype-mcp")]
@@ -101,7 +101,7 @@ async fn main() -> Result<()> {
         .with_ansi(false)
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(log_level.parse().unwrap())
+                .add_directive(log_level.parse().unwrap()),
         )
         .init();
 
@@ -113,9 +113,13 @@ async fn main() -> Result<()> {
     match cli.command.unwrap_or(Commands::Run {
         spec_path: None,
         mode: None,
-        port: None
+        port: None,
     }) {
-        Commands::Run { spec_path, mode, port } => {
+        Commands::Run {
+            spec_path,
+            mode,
+            port,
+        } => {
             let final_spec_path = spec_path.or(cli.spec_path).or(config.spec_path.clone());
             let final_mode = mode.or(cli.mode).unwrap_or(TransportMode::Stdio);
             let final_port = port.unwrap_or(cli.port);
@@ -125,7 +129,11 @@ async fn main() -> Result<()> {
             let final_spec_path = spec_path.or(cli.spec_path).or(config.spec_path.clone());
             generate_api_key(final_spec_path, config).await
         }
-        Commands::Validate { spec_path, mode, port } => {
+        Commands::Validate {
+            spec_path,
+            mode,
+            port,
+        } => {
             let final_spec_path = spec_path.or(cli.spec_path).or(config.spec_path.clone());
             let final_mode = mode.or(cli.mode).unwrap_or(TransportMode::Stdio);
             let final_port = port.unwrap_or(cli.port);
@@ -138,7 +146,12 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn run_server(spec_path: Option<String>, config: Config, mode: TransportMode, port: u16) -> Result<()> {
+async fn run_server(
+    spec_path: Option<String>,
+    config: Config,
+    mode: TransportMode,
+    port: u16,
+) -> Result<()> {
     info!("Initializing MCP server with mode: {:?}", mode);
 
     let server_mode = match mode {
@@ -155,7 +168,12 @@ async fn run_server(spec_path: Option<String>, config: Config, mode: TransportMo
     Ok(())
 }
 
-async fn validate_server(spec_path: Option<String>, config: Config, mode: TransportMode, port: u16) -> Result<()> {
+async fn validate_server(
+    spec_path: Option<String>,
+    config: Config,
+    mode: TransportMode,
+    port: u16,
+) -> Result<()> {
     info!("Validating MCP server configuration");
 
     let server_mode = match mode {

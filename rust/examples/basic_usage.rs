@@ -9,16 +9,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(None)?;
 
     // Create server
-    let server = AnytypeJsonRpcServer::new(
-        Some("../scripts/openapi.json".to_string()),
-        config
-    ).await?;
+    let server =
+        AnytypeJsonRpcServer::new(Some("../scripts/openapi.json".to_string()), config).await?;
 
     println!("Created server with {} tools", server.get_tools().len());
 
     // List available tools
     for tool in server.get_tools() {
-        println!("Tool: {} - {}", tool.name, tool.description.as_deref().unwrap_or("No description"));
+        println!(
+            "Tool: {} - {}",
+            tool.name,
+            tool.description.as_deref().unwrap_or("No description")
+        );
     }
 
     Ok(())

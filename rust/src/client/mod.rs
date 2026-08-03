@@ -4,11 +4,11 @@ pub use http_client::HttpClient;
 
 #[cfg(test)]
 mod tests {
-    use tokio;
-    use serde_json::json;
+
     use crate::client::HttpClient;
     use crate::config::Config;
     use crate::openapi::McpTool;
+    use serde_json::json;
 
     #[tokio::test]
     async fn test_http_client_simple() {
@@ -33,7 +33,11 @@ mod tests {
         let result = client.execute_tool(&tool, params).await;
 
         // This should succeed with httpbin.org
-        assert!(result.is_ok(), "HTTP client execution failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "HTTP client execution failed: {:?}",
+            result.err()
+        );
     }
 
     #[tokio::test]
@@ -98,37 +102,64 @@ mod tests {
         assert!(!headers.contains_key("Authorization"));
 
         // Test with API key
-        let mut config_with_key = Config::default();
-        config_with_key.api_key = Some("test_api_key_12345".to_string());
-        let client_with_key = HttpClient::new(&config_with_key, "https://httpbin.org".to_string()).unwrap();
+        let config_with_key = Config {
+            api_key: Some("test_api_key_12345".to_string()),
+            ..Default::default()
+        };
+        let client_with_key =
+            HttpClient::new(&config_with_key, "https://httpbin.org".to_string()).unwrap();
 
         let headers_with_key = client_with_key.get_default_headers();
 
         // Check that required headers are present
         assert!(headers_with_key.contains_key("Anytype-Version"));
-        assert_eq!(headers_with_key.get("Anytype-Version").unwrap(), "2025-05-20");
+        assert_eq!(
+            headers_with_key.get("Anytype-Version").unwrap(),
+            "2025-05-20"
+        );
         assert!(headers_with_key.contains_key("Content-Type"));
-        assert_eq!(headers_with_key.get("Content-Type").unwrap(), "application/json");
+        assert_eq!(
+            headers_with_key.get("Content-Type").unwrap(),
+            "application/json"
+        );
 
         // Authorization header should be present with Bearer token
         assert!(headers_with_key.contains_key("Authorization"));
-        assert_eq!(headers_with_key.get("Authorization").unwrap(), "Bearer test_api_key_12345");
+        assert_eq!(
+            headers_with_key.get("Authorization").unwrap(),
+            "Bearer test_api_key_12345"
+        );
 
         // Test with additional custom headers
         let mut custom_headers = HashMap::new();
         custom_headers.insert("Custom-Header".to_string(), "custom-value".to_string());
-        let mut config_with_custom = Config::default();
-        config_with_custom.headers = custom_headers;
-        config_with_custom.api_key = Some("another_key".to_string());
+        let config_with_custom = Config {
+            headers: custom_headers,
+            api_key: Some("another_key".to_string()),
+            ..Default::default()
+        };
 
-        let client_with_custom = HttpClient::new(&config_with_custom, "https://httpbin.org".to_string()).unwrap();
+        let client_with_custom =
+            HttpClient::new(&config_with_custom, "https://httpbin.org".to_string()).unwrap();
 
         let headers_with_custom = client_with_custom.get_default_headers();
 
         // All headers should be present
-        assert_eq!(headers_with_custom.get("Anytype-Version").unwrap(), "2025-05-20");
-        assert_eq!(headers_with_custom.get("Content-Type").unwrap(), "application/json");
-        assert_eq!(headers_with_custom.get("Authorization").unwrap(), "Bearer another_key");
-        assert_eq!(headers_with_custom.get("Custom-Header").unwrap(), "custom-value");
+        assert_eq!(
+            headers_with_custom.get("Anytype-Version").unwrap(),
+            "2025-05-20"
+        );
+        assert_eq!(
+            headers_with_custom.get("Content-Type").unwrap(),
+            "application/json"
+        );
+        assert_eq!(
+            headers_with_custom.get("Authorization").unwrap(),
+            "Bearer another_key"
+        );
+        assert_eq!(
+            headers_with_custom.get("Custom-Header").unwrap(),
+            "custom-value"
+        );
     }
 }
