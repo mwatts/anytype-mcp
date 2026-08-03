@@ -1,15 +1,32 @@
-pub mod hybrid_server;
 pub mod json_rpc_server;
 
-// Use the new JSON-RPC server as the default
-pub use hybrid_server::{HybridMcpServer, ServerMode};
 pub use json_rpc_server::AnytypeJsonRpcServer;
 
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
+    use crate::config::Config;
     use crate::server::AnytypeJsonRpcServer;
+
+    #[tokio::test]
+    async fn test_server_loads_embedded_spec() {
+        // The server must be usable with zero configuration: the embedded
+        // spec provides the full MCP tool surface (34 non-auth operations).
+        let server = AnytypeJsonRpcServer::new(None, Config::default())
+            .await
+            .unwrap();
+
+        let info = server.get_info();
+        assert_eq!(info.server_info.name, "anytype-mcp-server");
+        assert_eq!(server.get_tools().len(), 34);
+        assert!(
+            server
+                .get_tools()
+                .iter()
+                .all(|t| t.name.starts_with("API-"))
+        );
+    }
 
     #[tokio::test]
     async fn test_tool_input_schema_conversion() {

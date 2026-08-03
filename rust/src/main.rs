@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use tracing::info;
 
 mod auth;
@@ -11,7 +11,7 @@ mod utils;
 
 use auth::KeyGenerator;
 use config::Config;
-use server::{HybridMcpServer, ServerMode};
+use server::AnytypeJsonRpcServer;
 
 #[derive(Parser)]
 #[command(name = "anytype-mcp")]
@@ -28,46 +28,14 @@ struct Cli {
     /// Enable debug logging
     #[arg(long, global = true)]
     debug: bool,
-
-    /// Server transport mode
-    #[arg(long, global = true, value_enum)]
-    mode: Option<TransportMode>,
-
-    /// Port for HTTP-based transports (SSE, Streamable HTTP)
-    #[arg(long, global = true, default_value = "8080")]
-    port: u16,
-}
-
-#[derive(ValueEnum, Clone, Debug)]
-enum TransportMode {
-    /// Standard input/output (default)
-    Stdio,
-    /// Server-Sent Events over HTTP
-    Sse,
-    /// Streamable HTTP (experimental)
-    StreamableHttp,
-}
-
-impl From<TransportMode> for ServerMode {
-    fn from(mode: TransportMode) -> Self {
-        match mode {
-            TransportMode::Stdio => ServerMode::JsonRpcStdio,
-            TransportMode::Sse => ServerMode::JsonRpcSse { port: 8080 }, // Default port, will be overridden
-            TransportMode::StreamableHttp => ServerMode::JsonRpcStreamableHttp { port: 8080 }, // Default port, will be overridden
-        }
-    }
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Run the MCP server (default)
+    /// Run the MCP server on stdio (default)
     Run {
         #[arg(long)]
         spec_path: Option<String>,
-        #[arg(long, value_enum)]
-        mode: Option<TransportMode>,
-        #[arg(long)]
-        port: Option<u16>,
     },
     /// Generate API key interactively
     GetKey {
@@ -78,10 +46,6 @@ enum Commands {
     Validate {
         #[arg(long)]
         spec_path: Option<String>,
-        #[arg(long, value_enum)]
-        mode: Option<TransportMode>,
-        #[arg(long)]
-        port: Option<u16>,
     },
     /// List available tools
     ListTools {
@@ -97,7 +61,7 @@ async fn main() -> Result<()> {
     // Initialize logging
     let log_level = if cli.debug { "debug" } else { "info" };
     tracing_subscriber::fmt()
-        .with_writer(std::io::stderr) // ✅ Write logs to stderr
+        .with_writer(std::io::stderr) // stdout is reserved for the MCP protocol
         .with_ansi(false)
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
@@ -110,34 +74,18 @@ async fn main() -> Result<()> {
     // Load configuration
     let config = Config::load(cli.spec_path.as_deref())?;
 
-    match cli.command.unwrap_or(Commands::Run {
-        spec_path: None,
-        mode: None,
-        port: None,
-    }) {
-        Commands::Run {
-            spec_path,
-            mode,
-            port,
-        } => {
+    match cli.command.unwrap_or(Commands::Run { spec_path: None }) {
+        Commands::Run { spec_path } => {
             let final_spec_path = spec_path.or(cli.spec_path).or(config.spec_path.clone());
-            let final_mode = mode.or(cli.mode).unwrap_or(TransportMode::Stdio);
-            let final_port = port.unwrap_or(cli.port);
-            run_server(final_spec_path, config, final_mode, final_port).await
+            run_server(final_spec_path, config).await
         }
         Commands::GetKey { spec_path } => {
             let final_spec_path = spec_path.or(cli.spec_path).or(config.spec_path.clone());
             generate_api_key(final_spec_path, config).await
         }
-        Commands::Validate {
-            spec_path,
-            mode,
-            port,
-        } => {
+        Commands::Validate { spec_path } => {
             let final_spec_path = spec_path.or(cli.spec_path).or(config.spec_path.clone());
-            let final_mode = mode.or(cli.mode).unwrap_or(TransportMode::Stdio);
-            let final_port = port.unwrap_or(cli.port);
-            validate_server(final_spec_path, config, final_mode, final_port).await
+            validate_server(final_spec_path, config).await
         }
         Commands::ListTools { spec_path } => {
             let final_spec_path = spec_path.or(cli.spec_path).or(config.spec_path.clone());
@@ -146,48 +94,33 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn run_server(
-    spec_path: Option<String>,
-    config: Config,
-    mode: TransportMode,
-    port: u16,
-) -> Result<()> {
-    info!("Initializing MCP server with mode: {:?}", mode);
+async fn run_server(spec_path: Option<String>, config: Config) -> Result<()> {
+    let server = AnytypeJsonRpcServer::new(spec_path, config).await?;
 
-    let server_mode = match mode {
-        TransportMode::Stdio => ServerMode::JsonRpcStdio,
-        TransportMode::Sse => ServerMode::JsonRpcSse { port },
-        TransportMode::StreamableHttp => ServerMode::JsonRpcStreamableHttp { port },
-    };
-
-    let server = HybridMcpServer::new(spec_path, config, server_mode);
-
-    info!("Starting MCP server...");
-    server.start().await?;
-
-    Ok(())
+    info!("Starting MCP server on stdio...");
+    server.start_stdio().await
 }
 
-async fn validate_server(
-    spec_path: Option<String>,
-    config: Config,
-    mode: TransportMode,
-    port: u16,
-) -> Result<()> {
+async fn validate_server(spec_path: Option<String>, config: Config) -> Result<()> {
     info!("Validating MCP server configuration");
 
-    let server_mode = match mode {
-        TransportMode::Stdio => ServerMode::JsonRpcStdio,
-        TransportMode::Sse => ServerMode::JsonRpcSse { port },
-        TransportMode::StreamableHttp => ServerMode::JsonRpcStreamableHttp { port },
-    };
+    if let Some(path) = &spec_path {
+        if !path.starts_with("http") && !std::path::Path::new(path).exists() {
+            return Err(anyhow::anyhow!("OpenAPI spec file not found: {}", path));
+        }
+    }
 
-    let server = HybridMcpServer::new(spec_path, config, server_mode);
-    server.validate().await?;
+    let server = AnytypeJsonRpcServer::new(spec_path, config).await?;
+    let info = server.get_info();
 
-    let info = server.get_server_info().await?;
     println!("✅ Server configuration is valid!");
-    println!("{}", info);
+    println!(
+        "Server: {} v{}\nCapabilities: {:?}\nTools: {}",
+        info.server_info.name,
+        info.server_info.version,
+        info.capabilities,
+        server.get_tools().len()
+    );
 
     Ok(())
 }
@@ -195,15 +128,15 @@ async fn validate_server(
 async fn list_tools(spec_path: Option<String>, config: Config) -> Result<()> {
     info!("Listing available tools");
 
-    let server = HybridMcpServer::new(spec_path, config, ServerMode::JsonRpcStdio);
-    let tools = server.list_tools().await?;
+    let server = AnytypeJsonRpcServer::new(spec_path, config).await?;
+    let tools = server.get_tools();
 
     if tools.is_empty() {
         println!("No tools available. Make sure an OpenAPI specification is provided.");
     } else {
         println!("Available tools ({}):", tools.len());
         for (i, tool) in tools.iter().enumerate() {
-            println!("  {}. {}", i + 1, tool);
+            println!("  {}. {}", i + 1, tool.name);
         }
     }
 

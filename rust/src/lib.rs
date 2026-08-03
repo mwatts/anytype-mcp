@@ -9,4 +9,4 @@ pub use auth::KeyGenerator;
 pub use client::HttpClient;
 pub use config::Config;
 pub use openapi::OpenApiParser;
-pub use server::{AnytypeJsonRpcServer, HybridMcpServer, ServerMode};
+pub use server::AnytypeJsonRpcServer;

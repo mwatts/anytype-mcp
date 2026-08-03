@@ -118,18 +118,6 @@ impl AnytypeJsonRpcServer {
         Ok(())
     }
 
-    /// Start the server with SSE transport
-    pub async fn start_sse(self, port: u16) -> Result<()> {
-        info!(
-            "Starting JSON-RPC MCP server with SSE transport on port {}",
-            port
-        );
-
-        // For now, fall back to stdio until SSE transport is properly configured
-        info!("SSE transport not yet properly configured, falling back to stdio");
-        self.start_stdio().await
-    }
-
     /// Get server information
     pub fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
