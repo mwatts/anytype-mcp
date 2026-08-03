@@ -28,6 +28,7 @@ mod tests {
             method: "GET".to_string(),
             path: "/get".to_string(),
             operation_id: "test_get".to_string(),
+            file_upload_params: Vec::new(),
         };
 
         let params = json!({"param": "test_value"});

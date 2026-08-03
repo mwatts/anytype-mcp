@@ -30,6 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         method: "GET".to_string(),
         path: "/test".to_string(),
         operation_id: "test_operation".to_string(),
+        file_upload_params: Vec::new(),
     };
 
     println!("Created test tool: {:?}", test_tool);
