@@ -1,0 +1,58 @@
+[tools]
+rust = "1.97"
+
+[tasks.build]
+description = "Build the Rust crate (all targets)"
+dir = "rust"
+run = "cargo build --all-targets"
+
+[tasks.test]
+description = "Run the Rust test suite"
+dir = "rust"
+run = "cargo test"
+
+[tasks.fmt]
+description = "Format Rust code"
+dir = "rust"
+run = "cargo fmt --all"
+
+[tasks.fmt-check]
+description = "Check Rust formatting"
+dir = "rust"
+run = "cargo fmt --all -- --check"
+
+[tasks.lint]
+description = "Clippy with warnings denied"
+dir = "rust"
+run = "cargo clippy --all-targets -- -D warnings"
+
+[tasks.ci]
+description = "Full quality gate: fmt-check, lint, build, test"
+depends = ["fmt-check", "lint", "build", "test"]
+
+[tasks.run]
+description = "Start the MCP server on stdio"
+dir = "rust"
+run = "cargo run --quiet"
+
+[tasks.list-tools]
+description = "Print the MCP tools derived from the OpenAPI spec"
+dir = "rust"
+run = "cargo run --quiet -- list-tools"
+
+[tasks.get-key]
+description = "Interactive Anytype API key generation"
+dir = "rust"
+run = "cargo run --quiet -- get-key"
+
+[tasks.smoke]
+description = "MCP stdio smoke test: initialize + tools/list"
+dir = "rust"
+run = '''
+printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  | cargo run --quiet 2>/dev/null \
+  | grep -c '"jsonrpc"'
+'''

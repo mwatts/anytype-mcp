@@ -12,17 +12,16 @@ This branch (`conversion/rust`) is a Rust port of the TypeScript MCP server. **A
 
 ## Common Commands
 
-All Rust work happens in `rust/`:
+Tasks are managed with [mise](https://mise.jdx.dev) (`mise.toml` at the repo root pins the Rust toolchain and defines tasks; run from anywhere in the repo):
 
-- `cargo build --all-targets` - Build library, binary, and examples
-- `cargo test` - Run all tests
-- `cargo clippy --all-targets` - Lint (keep warning-free)
-- `cargo fmt` - Format code
-- `cargo run -- list-tools` - Print the MCP tools derived from the OpenAPI spec
-- `cargo run -- get-key` - API key acquisition helper
-- `cargo run` - Start the MCP server on stdio
+- `mise run ci` - Full quality gate: fmt-check, lint (clippy -D warnings), build, test
+- `mise run build` / `mise run test` / `mise run fmt` / `mise run lint`
+- `mise run list-tools` - Print the MCP tools derived from the OpenAPI spec (34)
+- `mise run smoke` - MCP stdio smoke test (initialize + tools/list; prints 2 on success)
+- `mise run get-key` - Interactive API key acquisition
+- `mise run run` - Start the MCP server on stdio
 
-Toolchain: Rust edition 2024, MSRV 1.85. MCP SDK: `rmcp` 3.x.
+Plain `cargo` from `rust/` works too. Toolchain: Rust edition 2024, MSRV 1.85. MCP SDK: `rmcp` 3.x.
 
 For the TypeScript reference implementation (Bun): `bun install`, `bun run test`, `bun run build`. See `src/` for behavior comparisons — notably `src/openapi/parser.ts`, `src/mcp/proxy.ts`, `src/client/http-client.ts`, and `src/auth/get-key.ts`.
 
