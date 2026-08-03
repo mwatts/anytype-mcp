@@ -6,6 +6,7 @@ pub use http_client::HttpClient;
 mod tests {
 
     use crate::client::HttpClient;
+    use crate::client::http_client::ANYTYPE_API_VERSION;
     use crate::config::Config;
     use crate::openapi::McpTool;
     use serde_json::json;
@@ -94,7 +95,7 @@ mod tests {
 
         // Check that required headers are present
         assert!(headers.contains_key("Anytype-Version"));
-        assert_eq!(headers.get("Anytype-Version").unwrap(), "2025-05-20");
+        assert_eq!(headers.get("Anytype-Version").unwrap(), ANYTYPE_API_VERSION);
         assert!(headers.contains_key("Content-Type"));
         assert_eq!(headers.get("Content-Type").unwrap(), "application/json");
 
@@ -115,7 +116,7 @@ mod tests {
         assert!(headers_with_key.contains_key("Anytype-Version"));
         assert_eq!(
             headers_with_key.get("Anytype-Version").unwrap(),
-            "2025-05-20"
+            ANYTYPE_API_VERSION
         );
         assert!(headers_with_key.contains_key("Content-Type"));
         assert_eq!(
@@ -147,7 +148,7 @@ mod tests {
         // All headers should be present
         assert_eq!(
             headers_with_custom.get("Anytype-Version").unwrap(),
-            "2025-05-20"
+            ANYTYPE_API_VERSION
         );
         assert_eq!(
             headers_with_custom.get("Content-Type").unwrap(),

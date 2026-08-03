@@ -131,7 +131,10 @@ impl KeyGenerator {
         let response = client
             .get(format!("{}/health", self.base_url))
             .header("Authorization", format!("Bearer {}", api_key))
-            .header("Anytype-Version", "2025-05-20")
+            .header(
+                "Anytype-Version",
+                crate::client::http_client::ANYTYPE_API_VERSION,
+            )
             .send()
             .await;
 

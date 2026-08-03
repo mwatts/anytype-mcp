@@ -9,6 +9,9 @@ use std::time::Duration;
 use tracing::{debug, error, warn};
 use url::Url;
 
+/// Anytype API version sent with every request; must match the bundled OpenAPI spec.
+pub const ANYTYPE_API_VERSION: &str = "2025-11-08";
+
 #[derive(Clone)]
 pub struct HttpClient {
     client: Client,
@@ -20,7 +23,7 @@ impl HttpClient {
     /// Create a new HTTP client with the given configuration and base URL.
     ///
     /// This client automatically includes the following headers in all requests:
-    /// - `Anytype-Version: 2025-05-20` - Required Anytype API version header
+    /// - `Anytype-Version` - Required Anytype API version header ([`ANYTYPE_API_VERSION`])
     /// - `Content-Type: application/json` - JSON content type for API requests
     /// - `Authorization: Bearer <api_key>` - Only if api_key is set in config
     ///
@@ -37,7 +40,10 @@ impl HttpClient {
         let mut default_headers = config.headers.clone();
 
         // Add required Anytype headers
-        default_headers.insert("Anytype-Version".to_string(), "2025-05-20".to_string());
+        default_headers.insert(
+            "Anytype-Version".to_string(),
+            ANYTYPE_API_VERSION.to_string(),
+        );
         default_headers.insert("Content-Type".to_string(), "application/json".to_string());
 
         // Add Authorization header if API key is provided
