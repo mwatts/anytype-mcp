@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { OpenAPIV3 } from "openapi-types";
 import { MCPProxy } from "./mcp/proxy";
+import { getDefaultSpecUrl } from "./utils/base-url";
 
 export class ValidationError extends Error {
   constructor(public errors: any[]) {
@@ -13,8 +14,7 @@ export class ValidationError extends Error {
 }
 
 export async function loadOpenApiSpec(specPath?: string): Promise<OpenAPIV3.Document> {
-  const defaultSpecUrl = "http://localhost:31009/docs/openapi.json";
-  const finalSpec = specPath || defaultSpecUrl;
+  const finalSpec = specPath || getDefaultSpecUrl();
   let rawSpec: string;
 
   if (finalSpec.startsWith("http://") || finalSpec.startsWith("https://")) {
@@ -31,7 +31,12 @@ export async function loadOpenApiSpec(specPath?: string): Promise<OpenAPIV3.Docu
     }
   } else {
     const filePath = path.resolve(process.cwd(), finalSpec);
-    rawSpec = fs.readFileSync(filePath, "utf-8");
+    try {
+      rawSpec = fs.readFileSync(filePath, "utf-8");
+    } catch (error: any) {
+      console.error("Failed to read OpenAPI specification file:", error.message || String(error));
+      process.exit(1);
+    }
   }
 
   try {
@@ -43,9 +48,10 @@ export async function loadOpenApiSpec(specPath?: string): Promise<OpenAPIV3.Docu
 }
 
 export async function initProxy(specPath: string) {
+  console.error("Initializing Anytype MCP Server...");
   const openApiSpec = await loadOpenApiSpec(specPath);
   const proxy = new MCPProxy("Anytype API", openApiSpec);
 
-  console.error("Connecting to Anytype API...");
-  return proxy.connect(new StdioServerTransport());
+  await proxy.connect(new StdioServerTransport());
+  console.error("Anytype MCP Server running on stdio");
 }
