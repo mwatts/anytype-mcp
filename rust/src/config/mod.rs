@@ -6,6 +6,10 @@ use figment::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
+use tracing::warn;
+
+/// Default Anytype API base URL (the desktop app's local API).
+pub const DEFAULT_BASE_URL: &str = "http://127.0.0.1:31009";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -64,6 +68,11 @@ impl Config {
             config.api_key = env::var("ANYTYPE_API_KEY").ok();
         }
 
+        // Custom API endpoint (e.g. anytype-cli on another port)
+        if config.base_url.is_none() {
+            config.base_url = parse_base_url_from_env();
+        }
+
         // Override spec path if provided
         if let Some(path) = spec_path {
             config.spec_path = Some(path.to_string());
@@ -86,5 +95,63 @@ impl Config {
     #[allow(dead_code)]
     pub fn get_api_key(&self) -> Option<&String> {
         self.api_key.as_ref()
+    }
+}
+
+/// Parse `ANYTYPE_API_BASE_URL`, keeping only the origin (scheme + host + port).
+///
+/// Invalid values are ignored with a warning, matching the TypeScript
+/// implementation's `parseBaseUrlFromEnv`.
+fn parse_base_url_from_env() -> Option<String> {
+    parse_base_url(&env::var("ANYTYPE_API_BASE_URL").ok()?)
+}
+
+fn parse_base_url(raw: &str) -> Option<String> {
+    if raw.trim().is_empty() {
+        return None;
+    }
+    match url::Url::parse(raw) {
+        Ok(parsed) if matches!(parsed.scheme(), "http" | "https") => {
+            Some(parsed.origin().ascii_serialization())
+        }
+        Ok(parsed) => {
+            warn!(
+                "Ignoring ANYTYPE_API_BASE_URL with unsupported protocol: {}",
+                parsed.scheme()
+            );
+            None
+        }
+        Err(e) => {
+            warn!("Ignoring invalid ANYTYPE_API_BASE_URL ({}): {}", raw, e);
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_base_url;
+
+    #[test]
+    fn base_url_keeps_origin_only() {
+        // Users point this at anytype-cli (e.g. port 31012); any path they
+        // paste along with it must not end up in API request URLs.
+        assert_eq!(
+            parse_base_url("http://localhost:31012/docs/openapi.json"),
+            Some("http://localhost:31012".to_string())
+        );
+        assert_eq!(
+            parse_base_url("https://example.com:8443"),
+            Some("https://example.com:8443".to_string())
+        );
+    }
+
+    #[test]
+    fn base_url_rejects_non_http_or_garbage() {
+        // A bad value must fall back to the default URL rather than
+        // producing requests to a nonsense endpoint.
+        assert_eq!(parse_base_url("ftp://example.com"), None);
+        assert_eq!(parse_base_url("not a url"), None);
+        assert_eq!(parse_base_url(""), None);
     }
 }

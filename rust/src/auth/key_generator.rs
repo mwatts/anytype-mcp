@@ -63,17 +63,17 @@ impl KeyGenerator {
                 spec_path
                     .rsplit_once('/')
                     .map(|s| s.0.to_string())
-                    .unwrap_or_else(|| "http://localhost:31009".to_string())
+                    .unwrap_or_else(|| crate::config::DEFAULT_BASE_URL.to_string())
             } else {
                 // Load local spec to get base URL
                 let spec = load_openapi_spec(&spec_path).await?;
-                get_base_url(&spec).unwrap_or_else(|| "http://localhost:31009".to_string())
+                get_base_url(&spec).unwrap_or_else(|| crate::config::DEFAULT_BASE_URL.to_string())
             }
         } else {
             config
                 .base_url
                 .clone()
-                .unwrap_or_else(|| "http://localhost:31009".to_string())
+                .unwrap_or_else(|| crate::config::DEFAULT_BASE_URL.to_string())
         };
 
         Ok(Self { base_url, config })

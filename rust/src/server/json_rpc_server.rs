@@ -72,7 +72,7 @@ impl AnytypeJsonRpcServer {
             .base_url
             .clone()
             .or_else(|| get_base_url(&spec))
-            .unwrap_or_else(|| "http://localhost:31009".to_string());
+            .unwrap_or_else(|| crate::config::DEFAULT_BASE_URL.to_string());
 
         info!("Using base URL: {}", base_url);
 
