@@ -2,6 +2,22 @@
 
 ---
 
+## Language: Standard Technical English
+
+**REQUIRED.** Use standard technical English for all documentation, code comments,
+commit messages, issue text, and every response to the user.
+
+- Write plain, precise, declarative sentences. Prefer active voice and present tense.
+- Use one term per concept, consistently. Do not introduce synonyms for the same thing.
+- Expand every acronym on first use.
+- No idioms, slang, metaphors, humor, marketing language, hype, or emoji.
+- No filler and no praise ("great question", "you're absolutely right"). State the fact.
+- Use US spelling and standard punctuation. Avoid contractions in reference documentation.
+- Quantify claims. Replace "much faster" with a measured number, or drop the claim.
+- Write identifiers, paths, commands, and API names in backticks, spelled exactly as they
+  appear in the code.
+- State uncertainty explicitly. Do not present an assumption as a verified fact.
+
 ## Beads Workflow Integration
 
 This project uses [beads_rust](https://github.com/Dicklesworthstone/beads_rust) (`br`/`bd`) for issue tracking. Issues are stored in `.beads/` and tracked in git.
